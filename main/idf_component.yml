@@ -3,3 +3,4 @@ dependencies:
     version: '>=5.3.0'
   badgeteam/badge-bsp: ^0.2.8
   robotman2412/pax-gfx: ^1.1.2
+  usb_host_hid: "^1.0.1"
