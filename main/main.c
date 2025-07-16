@@ -340,14 +340,15 @@ static void hid_host_mouse_report_callback(const uint8_t* const data, const int 
 
     hid_print_new_device_report_header(HID_PROTOCOL_MOUSE);
 
-    printf("X: %06d\tY: %06d\t|%c|%c|\r", x_pos, y_pos, (mouse_report->buttons.button1 ? 'o' : ' '),
-           (mouse_report->buttons.button2 ? 'o' : ' '));
+    printf("X: %06d\tY: %06d\t|%c|%c|%c|\r", x_pos, y_pos, (mouse_report->buttons.button1 ? 'o' : ' '),
+           (mouse_report->buttons.button3 ? 'o' : ' '), (mouse_report->buttons.button2 ? 'o' : ' '));
     fflush(stdout);
 
     char text[64];
     pax_simple_rect(&fb, WHITE, 0, 0, pax_buf_get_width(&fb), 72);
-    snprintf(text, sizeof(text), "Mouse X: %06d\tY: %06d\t|%c|%c|", x_pos, y_pos,
-             (mouse_report->buttons.button1 ? 'o' : ' '), (mouse_report->buttons.button2 ? 'o' : ' '));
+    snprintf(text, sizeof(text), "Mouse X: %06d\tY: %06d\t|%c|%c|%c|", x_pos, y_pos,
+             (mouse_report->buttons.button1 ? 'o' : ' '), (mouse_report->buttons.button3 ? 'o' : ' '),
+             (mouse_report->buttons.button2 ? 'o' : ' '));
     pax_draw_text(&fb, BLACK, pax_font_sky_mono, 16, 0, 18, text);
     blit();
 }
