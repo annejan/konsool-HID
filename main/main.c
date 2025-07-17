@@ -52,6 +52,44 @@ void blit(void) {
     bsp_display_blit(0, 0, display_h_res, display_v_res, pax_buf_get_pixels(&fb));
 }
 
+typedef struct {
+    uint8_t report_id;
+
+    // Named buttons (bitfields decoded)
+    bool a;
+    bool b;
+    bool x;
+    bool y;
+
+    bool select;
+    bool start;
+
+    bool l1;
+    bool r1;
+    bool l2;
+    bool r2;
+    bool l3;
+    bool r3;
+
+    bool home;
+
+    bool l4;
+    bool r4;
+
+    // D-Pad
+    bool up;
+    bool down;
+    bool left;
+    bool right;
+
+    uint8_t lx;  // Left stick X
+    uint8_t ly;  // Left stick Y
+    uint8_t rx;  // Right stick X
+    uint8_t ry;  // Right stick Y
+    uint8_t lt;  // Left trigger
+    uint8_t rt;  // Right trigger
+} gamepad_report_t;
+
 /**
  * @brief APP event group
  *
@@ -353,6 +391,94 @@ static void hid_host_mouse_report_callback(const uint8_t* const data, const int 
     blit();
 }
 
+static void parse_gamepad_report(gamepad_report_t* rpt, const uint8_t* data, int length) {
+    if (length < 10) return;
+
+    // Hex string of full report (e.g., "03 08 04 00 80 80 80 80 89 00 00")
+    static char hex_string[3 * 64] = {0};  // Safe for up to 64 bytes
+    char*       p                  = hex_string;
+
+    for (int i = 0; i < length; i++) {
+        p += sprintf(p, "%02X ", data[i]);
+    }
+    if (p > hex_string) *(p - 1) = '\0';
+
+    pax_simple_rect(&fb, WHITE, 0, 0, pax_buf_get_width(&fb), 72);
+    pax_draw_text(&fb, BLACK, pax_font_sky_mono, 16, 0, 18, hex_string);
+    blit();
+
+    rpt->report_id = data[0];
+
+    uint8_t b1 = data[1];
+    uint8_t b2 = data[2];
+    uint8_t b3 = data[3];
+
+    rpt->up    = (b1 == 0x00);
+    rpt->right = (b1 == 0x02);
+    rpt->down  = (b1 == 0x04);
+    rpt->left  = (b1 == 0x06);
+
+    rpt->a = b3 & 0x40;
+    rpt->b = b3 & 0x20;
+    rpt->x = b3 & 0x10;
+    rpt->y = b3 & 0x08;
+
+    rpt->l1 = b3 & (1 << 0);
+    rpt->r1 = b2 & 0x80;
+
+    rpt->l2 = b3 & (1 << 2);
+    rpt->r2 = b3 & (1 << 1);
+
+    rpt->l3 = b2 & 0x04;
+    rpt->r3 = b2 & 0x08;
+    ;
+
+    rpt->l4 = b2 & 0x02;
+    rpt->r4 = b2 & 0x01;
+
+    rpt->select = b2 & 0x40;
+    rpt->start  = b2 & 0x20;
+
+    rpt->home = b2 & 0x10;
+
+    rpt->lx = data[4];
+    rpt->ly = data[5];
+    rpt->rx = data[6];
+    rpt->ry = data[7];
+    rpt->lt = data[8];
+    rpt->rt = data[9];
+}
+
+static void print_gamepad_report(const gamepad_report_t* rpt, int length) {
+    printf(
+        "Report ID: 0x%02X | Length: %2d\n"
+        "  Axes: LX=%3d LY=%3d RX=%3d RY=%3d LT=%3d RT=%3d\n"
+        "  Buttons:",
+        rpt->report_id, length, rpt->lx, rpt->ly, rpt->rx, rpt->ry, rpt->lt, rpt->rt);
+
+    if (rpt->a) printf(" A");
+    if (rpt->b) printf(" B");
+    if (rpt->x) printf(" X");
+    if (rpt->y) printf(" Y");
+    if (rpt->l1) printf(" L1");
+    if (rpt->r1) printf(" R1");
+    if (rpt->l2) printf(" L2");
+    if (rpt->r2) printf(" R2");
+    if (rpt->select) printf(" Select");
+    if (rpt->start) printf(" Start");
+    if (rpt->l3) printf(" L3");
+    if (rpt->r3) printf(" R3");
+    if (rpt->home) printf(" Home");
+    if (rpt->l4) printf(" L4");
+    if (rpt->r4) printf(" R4");
+    if (rpt->up) printf(" Up");
+    if (rpt->down) printf(" Down");
+    if (rpt->left) printf(" Left");
+    if (rpt->right) printf(" Right");
+
+    putchar('\n');
+}
+
 /**
  * @brief USB HID Host Generic Interface report callback handler
  *
@@ -363,10 +489,14 @@ static void hid_host_mouse_report_callback(const uint8_t* const data, const int 
  */
 static void hid_host_generic_report_callback(const uint8_t* const data, const int length) {
     hid_print_new_device_report_header(HID_PROTOCOL_NONE);
-    for (int i = 0; i < length; i++) {
-        printf("%02X", data[i]);
+
+    if (length >= 10) {
+        gamepad_report_t rpt = {0};
+        parse_gamepad_report(&rpt, data, length);
+        print_gamepad_report(&rpt, length);
+    } else {
+        printf("Received too-short report (%d bytes)\n", length);
     }
-    putchar('\r');
 }
 
 /**
@@ -453,6 +583,9 @@ void hid_host_device_event(hid_host_device_handle_t hid_device_handle, const hid
             char text[64];
             snprintf(text, sizeof(text), "HID Device, protocol '%s' CONNECTED", hid_proto_name_str[dev_params.proto]);
             pax_draw_text(&fb, BLACK, pax_font_sky_mono, 16, 0, 18, text);
+
+            // TODO detection magic
+
             blit();
 
             const hid_host_device_config_t dev_config = {.callback = hid_host_interface_callback, .callback_arg = NULL};
@@ -610,8 +743,6 @@ void app_main(void) {
     ESP_LOGW(TAG, "Hello HID!");
 
     pax_background(&fb, WHITE);
-    pax_draw_text(&fb, BLACK, pax_font_sky_mono, 16, 0, 16, "Hello HID!");
-    blit();
 
     // Power to USB
     bsp_power_set_usb_host_boost_enabled(true);
@@ -650,7 +781,7 @@ void app_main(void) {
 
     ESP_LOGI(TAG, "Waiting for HID Device to be connected");
 
-    pax_draw_text(&fb, BLACK, pax_font_sky_mono, 16, 48, 16, "Hello HID!");
+    pax_draw_text(&fb, BLACK, pax_font_sky_mono, 16, 0, 16, "Hello HID!");
     blit();
 
     while (1) {
