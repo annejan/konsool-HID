@@ -52,6 +52,10 @@ void blit(void) {
     bsp_display_blit(0, 0, display_h_res, display_v_res, pax_buf_get_pixels(&fb));
 }
 
+void cls(void) {
+    pax_simple_rect(&fb, WHITE, 0, 0, pax_buf_get_width(&fb), pax_buf_get_height(&fb));
+}
+
 typedef struct {
     uint8_t report_id;
 
@@ -383,7 +387,7 @@ static void hid_host_mouse_report_callback(const uint8_t* const data, const int 
     fflush(stdout);
 
     char text[64];
-    pax_simple_rect(&fb, WHITE, 0, 0, pax_buf_get_width(&fb), 72);
+    cls();
     snprintf(text, sizeof(text), "Mouse X: %06d\tY: %06d\t|%c|%c|%c|", x_pos, y_pos,
              (mouse_report->buttons.button1 ? 'o' : ' '), (mouse_report->buttons.button3 ? 'o' : ' '),
              (mouse_report->buttons.button2 ? 'o' : ' '));
@@ -403,9 +407,8 @@ static void parse_gamepad_report(gamepad_report_t* rpt, const uint8_t* data, int
     }
     if (p > hex_string) *(p - 1) = '\0';
 
-    pax_simple_rect(&fb, WHITE, 0, 0, pax_buf_get_width(&fb), 72);
-    pax_draw_text(&fb, BLACK, pax_font_sky_mono, 16, 0, 18, hex_string);
-    blit();
+    cls();
+    pax_draw_text(&fb, BLACK, pax_font_sky_mono, 16, 10, 180, hex_string);
 
     rpt->report_id = data[0];
 
@@ -450,33 +453,62 @@ static void parse_gamepad_report(gamepad_report_t* rpt, const uint8_t* data, int
 }
 
 static void print_gamepad_report(const gamepad_report_t* rpt, int length) {
-    printf(
-        "Report ID: 0x%02X | Length: %2d\n"
-        "  Axes: LX=%3d LY=%3d RX=%3d RY=%3d LT=%3d RT=%3d\n"
-        "  Buttons:",
-        rpt->report_id, length, rpt->lx, rpt->ly, rpt->rx, rpt->ry, rpt->lt, rpt->rt);
+    char line1[64], line2[64], button_line[128];
 
-    if (rpt->a) printf(" A");
-    if (rpt->b) printf(" B");
-    if (rpt->x) printf(" X");
-    if (rpt->y) printf(" Y");
-    if (rpt->l1) printf(" L1");
-    if (rpt->r1) printf(" R1");
-    if (rpt->l2) printf(" L2");
-    if (rpt->r2) printf(" R2");
-    if (rpt->select) printf(" Select");
-    if (rpt->start) printf(" Start");
-    if (rpt->l3) printf(" L3");
-    if (rpt->r3) printf(" R3");
-    if (rpt->home) printf(" Home");
-    if (rpt->l4) printf(" L4");
-    if (rpt->r4) printf(" R4");
-    if (rpt->up) printf(" Up");
-    if (rpt->down) printf(" Down");
-    if (rpt->left) printf(" Left");
-    if (rpt->right) printf(" Right");
+    snprintf(line1, sizeof(line1), "Report ID: 0x%02X | Length: %2d", rpt->report_id, length);
+    snprintf(line2, sizeof(line2), "Axes: LX=%3d LY=%3d RX=%3d RY=%3d LT=%3d RT=%3d", rpt->lx, rpt->ly, rpt->rx,
+             rpt->ry, rpt->lt, rpt->rt);
 
-    putchar('\n');
+    const char* btn_labels[] = {"A",  "B",  "X",      "Y",     "L1",   "R1",   "L2",    "R2", "L3",  "R3",
+                                "L4", "R4", "Select", "Start", "Home", "Left", "Right", "Up", "Down"};
+    const bool  btn_states[] = {rpt->a,    rpt->b,    rpt->x,     rpt->y,  rpt->l1,  rpt->r1,     rpt->l2,
+                                rpt->r2,   rpt->l3,   rpt->r3,    rpt->l4, rpt->r4,  rpt->select, rpt->start,
+                                rpt->home, rpt->left, rpt->right, rpt->up, rpt->down};
+
+    button_line[0] = '\0';
+    strcat(button_line, "Buttons:");
+    for (int i = 0; i < sizeof(btn_labels) / sizeof(btn_labels[0]); i++) {
+        if (btn_states[i]) {
+            strcat(button_line, " ");
+            strcat(button_line, btn_labels[i]);
+        }
+    }
+
+    printf("%s\n%s\n%s\n", button_line, line1, line2);
+
+    pax_draw_text(&fb, BLACK, pax_font_sky_mono, 16, 10, 10, button_line);
+    pax_draw_text(&fb, BLACK, pax_font_sky_mono, 16, 10, 26, line1);
+    pax_draw_text(&fb, BLACK, pax_font_sky_mono, 16, 10, 42, line2);
+    blit();
+}
+
+void draw_gamepad_visual(const gamepad_report_t* rpt) {
+    const int center_y = 120;
+
+    const int l_center_x = 130;
+    pax_draw_circle(&fb, RED, l_center_x, center_y, 12);
+
+    int lx_offset = ((int)rpt->lx - 128) / 6;
+    int ly_offset = ((int)rpt->ly - 128) / 6;
+    pax_draw_circle(&fb, BLACK, l_center_x + lx_offset, center_y + ly_offset, 3);
+
+    const int bar_w     = 10;
+    const int bar_h_max = 40;
+
+    const int lt_x = 170;
+    int       lt_h = (rpt->lt * bar_h_max) / 255;
+    pax_draw_rect(&fb, BLACK, lt_x, center_y - lt_h, bar_w, lt_h);
+
+    const int rt_x = 190;
+    int       rt_h = (rpt->rt * bar_h_max) / 255;
+    pax_draw_rect(&fb, BLACK, rt_x, center_y - rt_h, bar_w, rt_h);
+
+    const int r_center_x = 230;
+    pax_draw_circle(&fb, RED, r_center_x, center_y, 12);
+
+    int rx_offset = ((int)rpt->rx - 128) / 6;
+    int ry_offset = ((int)rpt->ry - 128) / 6;
+    pax_draw_circle(&fb, BLACK, r_center_x + rx_offset, center_y + ry_offset, 3);
 }
 
 /**
@@ -493,6 +525,7 @@ static void hid_host_generic_report_callback(const uint8_t* const data, const in
     if (length >= 10) {
         gamepad_report_t rpt = {0};
         parse_gamepad_report(&rpt, data, length);
+        draw_gamepad_visual(&rpt);
         print_gamepad_report(&rpt, length);
     } else {
         printf("Received too-short report (%d bytes)\n", length);
@@ -533,7 +566,7 @@ void hid_host_interface_callback(hid_host_device_handle_t hid_device_handle, con
         case HID_HOST_INTERFACE_EVENT_DISCONNECTED:
             ESP_LOGI(TAG, "HID Device, protocol '%s' DISCONNECTED", hid_proto_name_str[dev_params.proto]);
 
-            pax_simple_rect(&fb, WHITE, 0, 0, pax_buf_get_width(&fb), 72);
+            cls();
             snprintf(text, sizeof(text), "HID Device, protocol '%s' DISCONNECTED",
                      hid_proto_name_str[dev_params.proto]);
             pax_draw_text(&fb, BLACK, pax_font_sky_mono, 16, 0, 18, text);
@@ -544,7 +577,7 @@ void hid_host_interface_callback(hid_host_device_handle_t hid_device_handle, con
         case HID_HOST_INTERFACE_EVENT_TRANSFER_ERROR:
             ESP_LOGI(TAG, "HID Device, protocol '%s' TRANSFER_ERROR", hid_proto_name_str[dev_params.proto]);
 
-            pax_simple_rect(&fb, WHITE, 0, 0, pax_buf_get_width(&fb), 72);
+            cls();
             snprintf(text, sizeof(text), "HID Device, protocol '%s' TRANSFER_ERROR",
                      hid_proto_name_str[dev_params.proto]);
             pax_draw_text(&fb, BLACK, pax_font_sky_mono, 16, 0, 18, text);
@@ -554,7 +587,7 @@ void hid_host_interface_callback(hid_host_device_handle_t hid_device_handle, con
         default:
             ESP_LOGE(TAG, "HID Device, protocol '%s' Unhandled event", hid_proto_name_str[dev_params.proto]);
 
-            pax_simple_rect(&fb, WHITE, 0, 0, pax_buf_get_width(&fb), 72);
+            cls();
             snprintf(text, sizeof(text), "HID Device, protocol '%s' Unhandled event",
                      hid_proto_name_str[dev_params.proto]);
             pax_draw_text(&fb, BLACK, pax_font_sky_mono, 16, 0, 18, text);
@@ -579,7 +612,7 @@ void hid_host_device_event(hid_host_device_handle_t hid_device_handle, const hid
         case HID_HOST_DRIVER_EVENT_CONNECTED:
             ESP_LOGI(TAG, "HID Device, protocol '%s' CONNECTED", hid_proto_name_str[dev_params.proto]);
 
-            pax_simple_rect(&fb, WHITE, 0, 0, pax_buf_get_width(&fb), 72);
+            cls();
             char text[64];
             snprintf(text, sizeof(text), "HID Device, protocol '%s' CONNECTED", hid_proto_name_str[dev_params.proto]);
             pax_draw_text(&fb, BLACK, pax_font_sky_mono, 16, 0, 18, text);
@@ -631,7 +664,7 @@ static void usb_lib_task(void* arg) {
 
     ESP_LOGI(TAG, "USB shutdown");
 
-    pax_simple_rect(&fb, WHITE, 0, 0, pax_buf_get_width(&fb), 72);
+    cls();
     pax_draw_text(&fb, BLACK, pax_font_sky_mono, 16, 0, 0, "USB shutdown");
     blit();
 
