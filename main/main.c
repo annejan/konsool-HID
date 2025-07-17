@@ -350,8 +350,22 @@ static void hid_host_keyboard_report_callback(const uint8_t* const data, const i
         return;
     }
 
+    static char hex_string[3 * 64] = {0};  // Safe for up to 64 bytes
+    char*       p                  = hex_string;
+
+    for (int i = 0; i < length; i++) {
+        p += sprintf(p, "%02X ", data[i]);
+    }
+    if (p > hex_string) *(p - 1) = '\0';
+
+    cls();
+    pax_draw_text(&fb, BLACK, pax_font_sky_mono, 16, 10, 180, hex_string);
+
     static uint8_t prev_keys[HID_KEYBOARD_KEY_MAX] = {0};
     key_event_t    key_event;
+
+    char  text[64] = {0};
+    char* q        = text;
 
     for (int i = 0; i < HID_KEYBOARD_KEY_MAX; i++) {
 
@@ -371,7 +385,17 @@ static void hid_host_keyboard_report_callback(const uint8_t* const data, const i
             key_event.state    = KEY_STATE_PRESSED;
             key_event_callback(&key_event);
         }
+
+        // add currently pressed key to text buffer
+        if (kb_report->key[i] > HID_KEY_ERROR_UNDEFINED) {
+            // Append as hex, or you can convert to ASCII if you have a lookup
+            int written = snprintf(q, sizeof(text) - (q - text), "%02X ", kb_report->key[i]);
+            if (written > 0) q += written;
+        }
     }
+
+    pax_draw_text(&fb, BLACK, pax_font_sky_mono, 16, 10, 10, text);
+    blit();
 
     memcpy(prev_keys, &kb_report->key, HID_KEYBOARD_KEY_MAX);
 }
