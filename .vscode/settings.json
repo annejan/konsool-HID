@@ -3,6 +3,8 @@
         "-Wunknown-warning-option"
     ],
     "clangd.arguments": [
-        "--query-driver=/**/riscv32-esp-elf/bin/riscv32-esp-elf-gcc"
-    ]
+        "--query-driver=/**/riscv32-esp-elf/bin/riscv32-esp-elf-g*"
+    ],
+    "clangd.path": "/usr/bin/clangd",
+    "clangd.useScriptAsExecutable": false
 }

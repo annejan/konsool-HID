@@ -1,12 +1,9 @@
 #include <stdio.h>
 #include "bsp/device.h"
 #include "bsp/display.h"
-#include "bsp/input.h"
 #include "bsp/led.h"
 #include "bsp/power.h"
 #include "driver/gpio.h"
-#include "esp_lcd_panel_ops.h"
-#include "esp_lcd_types.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"

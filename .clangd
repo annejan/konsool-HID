@@ -1,6 +1,12 @@
 CompileFlags:
+  Add:
+    - -Wno-unknown-warning-option
   Remove:
     - -fno-shrink-wrap
     - -fstrict-volatile-bitfields
     - -fno-tree-switch-conversion
     - -march=rv32imafc_zicsr_zifencei_xesppie
+    - -fanalyzer
+    - -fno-analyzer
+    - -fzero-init-padding-bits=all
+    - -fno-malloc-dce
