@@ -94,6 +94,22 @@ typedef struct {
     uint8_t rt;  // Right trigger
 } gamepad_report_t;
 
+typedef struct {
+    union {
+        struct {
+            uint8_t button1  : 1;
+            uint8_t button2  : 1;
+            uint8_t button3  : 1;
+            uint8_t reserved : 5;
+        };
+        uint8_t val;
+    } buttons;
+    int16_t x_displacement;
+    int16_t y_displacement;
+    int8_t  scroll;
+    int8_t  tilt;
+} mouse_report_t;
+
 /**
  * @brief APP event group
  *
@@ -360,6 +376,15 @@ static void hid_host_keyboard_report_callback(const uint8_t* const data, const i
     memcpy(prev_keys, &kb_report->key, HID_KEYBOARD_KEY_MAX);
 }
 
+int16_t sign_extend_12bit(uint16_t value) {
+    if (value & 0x800) {
+        // If the 12th bit is set (negative number in 12-bit signed)
+        return (int16_t)(value | 0xF000);  // Fill top 4 bits with 1s
+    } else {
+        return (int16_t)(value & 0x0FFF);  // Mask to 12 bits
+    }
+}
+
 /**
  * @brief USB HID Host Mouse Interface report callback handler
  *
@@ -367,32 +392,74 @@ static void hid_host_keyboard_report_callback(const uint8_t* const data, const i
  * @param[in] length  Length of input report data buffer
  */
 static void hid_host_mouse_report_callback(const uint8_t* const data, const int length) {
-    hid_mouse_input_report_boot_t* mouse_report = (hid_mouse_input_report_boot_t*)data;
-
     if (length < sizeof(hid_mouse_input_report_boot_t)) {
         return;
     }
 
-    static int x_pos = 0;
-    static int y_pos = 0;
+    static char hex_string[3 * 64] = {0};  // Safe for up to 64 bytes
+    char*       p                  = hex_string;
+
+    for (int i = 0; i < length; i++) {
+        p += sprintf(p, "%02X ", data[i]);
+    }
+    if (p > hex_string) *(p - 1) = '\0';
+
+    cls();
+    pax_draw_text(&fb, BLACK, pax_font_sky_mono, 16, 10, 180, hex_string);
+
+    mouse_report_t mouse_report = {0};
+
+    if (length <= 4) {
+        hid_mouse_input_report_boot_t* boot_mouse_report = (hid_mouse_input_report_boot_t*)data;
+        mouse_report.x_displacement                      = boot_mouse_report->x_displacement;
+        mouse_report.y_displacement                      = boot_mouse_report->y_displacement;
+        mouse_report.buttons.val                         = boot_mouse_report->buttons.val;
+        if (length == 3) {
+            mouse_report.scroll = data[4];
+        }
+    } else if (length == 5) {
+        mouse_report.buttons.val    = data[0];
+        mouse_report.x_displacement = (int8_t)data[1];
+        mouse_report.y_displacement = (int8_t)data[2];
+        mouse_report.scroll         = (int8_t)data[3];
+        mouse_report.tilt           = (int8_t)data[4];
+    } else if (length < 9) {
+        mouse_report.buttons.val    = data[1];
+        mouse_report.x_displacement = sign_extend_12bit((data[4] & 0x0F) << 8) | data[3];
+        mouse_report.y_displacement = sign_extend_12bit(data[5] << 4) | (data[4] >> 4);
+        mouse_report.scroll         = (int8_t)data[6];
+        if (length == 8) {
+            mouse_report.tilt = (int8_t)data[7];
+        }
+    } else {
+        mouse_report.buttons.val    = data[1];
+        mouse_report.x_displacement = (int16_t)((data[4] << 8) | data[3]);
+        mouse_report.y_displacement = (int16_t)((data[6] << 8) | data[5]);
+        mouse_report.scroll         = (int8_t)data[7];
+        mouse_report.tilt           = (int8_t)data[8];
+    }
+
+    static int x_pos    = 0;
+    static int y_pos    = 0;
+    static int x_scroll = 0;
+    static int y_scroll = 0;
 
     // Calculate absolute position from displacement
-    x_pos += mouse_report->x_displacement;
-    y_pos += mouse_report->y_displacement;
+    x_pos    += mouse_report.x_displacement;
+    y_pos    += mouse_report.y_displacement;
+    x_scroll += mouse_report.scroll;
+    y_scroll += mouse_report.tilt;
 
     hid_print_new_device_report_header(HID_PROTOCOL_MOUSE);
 
-    printf("X: %06d\tY: %06d\t|%c|%c|%c|\r", x_pos, y_pos, (mouse_report->buttons.button1 ? 'o' : ' '),
-           (mouse_report->buttons.button3 ? 'o' : ' '), (mouse_report->buttons.button2 ? 'o' : ' '));
-    fflush(stdout);
-
     char text[64];
-    cls();
-    snprintf(text, sizeof(text), "Mouse X: %06d\tY: %06d\t|%c|%c|%c|", x_pos, y_pos,
-             (mouse_report->buttons.button1 ? 'o' : ' '), (mouse_report->buttons.button3 ? 'o' : ' '),
-             (mouse_report->buttons.button2 ? 'o' : ' '));
+    snprintf(text, sizeof(text), "Mouse X: %06d\tY: %06d\t|%c|%c|%c| Scroll: %03d Tilt: %03d", x_pos, y_pos,
+             (mouse_report.buttons.button1 ? 'o' : ' '), (mouse_report.buttons.button3 ? 'o' : ' '),
+             (mouse_report.buttons.button2 ? 'o' : ' '), x_scroll, y_scroll);
     pax_draw_text(&fb, BLACK, pax_font_sky_mono, 16, 0, 18, text);
     blit();
+    printf("%s\n", text);
+    fflush(stdout);
 }
 
 static void parse_gamepad_report(gamepad_report_t* rpt, const uint8_t* data, int length) {
@@ -616,9 +683,6 @@ void hid_host_device_event(hid_host_device_handle_t hid_device_handle, const hid
             char text[64];
             snprintf(text, sizeof(text), "HID Device, protocol '%s' CONNECTED", hid_proto_name_str[dev_params.proto]);
             pax_draw_text(&fb, BLACK, pax_font_sky_mono, 16, 0, 18, text);
-
-            // TODO detection magic
-
             blit();
 
             const hid_host_device_config_t dev_config = {.callback = hid_host_interface_callback, .callback_arg = NULL};
@@ -628,6 +692,9 @@ void hid_host_device_event(hid_host_device_handle_t hid_device_handle, const hid
                 ESP_ERROR_CHECK(hid_class_request_set_protocol(hid_device_handle, HID_REPORT_PROTOCOL_BOOT));
                 if (HID_PROTOCOL_KEYBOARD == dev_params.proto) {
                     ESP_ERROR_CHECK(hid_class_request_set_idle(hid_device_handle, 0, 0));
+                }
+                if (HID_PROTOCOL_MOUSE == dev_params.proto) {
+                    hid_class_request_set_protocol(hid_device_handle, HID_REPORT_PROTOCOL_REPORT);
                 }
             }
             ESP_ERROR_CHECK(hid_host_device_start(hid_device_handle));
