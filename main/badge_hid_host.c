@@ -4,6 +4,7 @@
 // Contains low-level helpers for parsing raw USB HID input reports.
 
 #include "badge_hid_host.h"
+#include "usb/hid_usage_keyboard.h"
 #include "usb/hid_usage_mouse.h"
 
 /**
@@ -129,4 +130,19 @@ gamepad_report_t parse_gamepad_report(const uint8_t* data, int length) {
     rpt.rt = data[9];
 
     return rpt;
+}
+
+/**
+ * @brief HID Keyboard modifier verification for capitalization application (right or left shift)
+ *
+ * @param[in] modifier
+ * @return true  Modifier was pressed (left or right shift)
+ * @return false Modifier was not pressed (left or right shift)
+ *
+ */
+static inline bool hid_keyboard_is_modifier_shift(uint8_t modifier) {
+    if (((modifier & HID_LEFT_SHIFT) == HID_LEFT_SHIFT) || ((modifier & HID_RIGHT_SHIFT) == HID_RIGHT_SHIFT)) {
+        return true;
+    }
+    return false;
 }
