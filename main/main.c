@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include "badge_hid_host.h"
 #include "bsp/device.h"
 #include "bsp/display.h"
 #include "bsp/led.h"
@@ -52,62 +53,6 @@ void blit(void) {
 void cls(void) {
     pax_simple_rect(&fb, WHITE, 0, 0, pax_buf_get_width(&fb), pax_buf_get_height(&fb));
 }
-
-typedef struct {
-    uint8_t report_id;
-
-    union {
-        struct {
-            uint32_t a : 1;
-            uint32_t b : 1;
-            uint32_t x : 1;
-            uint32_t y : 1;
-
-            uint32_t select : 1;
-            uint32_t start  : 1;
-
-            uint32_t l1 : 1;
-            uint32_t r1 : 1;
-            uint32_t l2 : 1;
-            uint32_t r2 : 1;
-            uint32_t l3 : 1;
-            uint32_t r3 : 1;
-
-            uint32_t home : 1;
-
-            uint32_t l4 : 1;
-            uint32_t r4 : 1;
-
-            uint32_t up    : 1;
-            uint32_t down  : 1;
-            uint32_t left  : 1;
-            uint32_t right : 1;
-
-            uint32_t _reserved : 13;  // Up to 32 bits total
-        };
-        uint32_t val;
-    } buttons;
-
-    uint8_t lx, ly;
-    uint8_t rx, ry;
-    uint8_t lt, rt;
-} gamepad_report_t;
-
-typedef struct {
-    union {
-        struct {
-            uint8_t button1  : 1;
-            uint8_t button2  : 1;
-            uint8_t button3  : 1;
-            uint8_t reserved : 5;
-        };
-        uint8_t val;
-    } buttons;
-    int16_t x_displacement;
-    int16_t y_displacement;
-    int8_t  scroll;
-    int8_t  tilt;
-} mouse_report_t;
 
 /**
  * @brief APP event group
@@ -399,15 +344,6 @@ static void hid_host_keyboard_report_callback(const uint8_t* const data, const i
     memcpy(prev_keys, &kb_report->key, HID_KEYBOARD_KEY_MAX);
 }
 
-int16_t sign_extend_12bit(uint16_t value) {
-    if (value & 0x800) {
-        // If the 12th bit is set (negative number in 12-bit signed)
-        return (int16_t)(value | 0xF000);  // Fill top 4 bits with 1s
-    } else {
-        return (int16_t)(value & 0x0FFF);  // Mask to 12 bits
-    }
-}
-
 /**
  * @brief USB HID Host Mouse Interface report callback handler
  *
@@ -430,37 +366,7 @@ static void hid_host_mouse_report_callback(const uint8_t* const data, const int 
     cls();
     pax_draw_text(&fb, BLACK, pax_font_sky_mono, 16, 10, 180, hex_string);
 
-    mouse_report_t mouse_report = {0};
-
-    if (length <= 4) {
-        hid_mouse_input_report_boot_t* boot_mouse_report = (hid_mouse_input_report_boot_t*)data;
-        mouse_report.x_displacement                      = boot_mouse_report->x_displacement;
-        mouse_report.y_displacement                      = boot_mouse_report->y_displacement;
-        mouse_report.buttons.val                         = boot_mouse_report->buttons.val;
-        if (length == 3) {
-            mouse_report.scroll = data[4];
-        }
-    } else if (length == 5) {
-        mouse_report.buttons.val    = data[0];
-        mouse_report.x_displacement = (int8_t)data[1];
-        mouse_report.y_displacement = (int8_t)data[2];
-        mouse_report.scroll         = (int8_t)data[3];
-        mouse_report.tilt           = (int8_t)data[4];
-    } else if (length < 9) {
-        mouse_report.buttons.val    = data[1];
-        mouse_report.x_displacement = sign_extend_12bit((data[4] & 0x0F) << 8) | data[3];
-        mouse_report.y_displacement = sign_extend_12bit(data[5] << 4) | (data[4] >> 4);
-        mouse_report.scroll         = (int8_t)data[6];
-        if (length == 8) {
-            mouse_report.tilt = (int8_t)data[7];
-        }
-    } else {
-        mouse_report.buttons.val    = data[1];
-        mouse_report.x_displacement = (int16_t)((data[4] << 8) | data[3]);
-        mouse_report.y_displacement = (int16_t)((data[6] << 8) | data[5]);
-        mouse_report.scroll         = (int8_t)data[7];
-        mouse_report.tilt           = (int8_t)data[8];
-    }
+    mouse_report_t mouse_report = parse_mouse_event(data, length);
 
     static int x_pos    = 0;
     static int y_pos    = 0;
@@ -483,65 +389,6 @@ static void hid_host_mouse_report_callback(const uint8_t* const data, const int 
     blit();
     printf("%s\n", text);
     fflush(stdout);
-}
-
-static void parse_gamepad_report(gamepad_report_t* rpt, const uint8_t* data, int length) {
-    if (length < 10) return;
-
-    // Hex string of full report (e.g., "03 08 04 00 80 80 80 80 89 00 00")
-    static char hex_string[3 * 64] = {0};  // Safe for up to 64 bytes
-    char*       p                  = hex_string;
-
-    for (int i = 0; i < length; i++) {
-        p += sprintf(p, "%02X ", data[i]);
-    }
-    if (p > hex_string) *(p - 1) = '\0';
-
-    cls();
-    pax_draw_text(&fb, BLACK, pax_font_sky_mono, 16, 10, 180, hex_string);
-
-    rpt->report_id = data[0];
-
-    uint8_t hat = data[1];
-    uint8_t b1  = data[2];
-    uint8_t b2  = data[3];
-
-    rpt->buttons.val = 0;
-
-    rpt->buttons.up    = (hat == 0x00 || hat == 0x01 || hat == 0x07);
-    rpt->buttons.right = (hat == 0x01 || hat == 0x02 || hat == 0x03);
-    rpt->buttons.down  = (hat == 0x03 || hat == 0x04 || hat == 0x05);
-    rpt->buttons.left  = (hat == 0x05 || hat == 0x06 || hat == 0x07);
-
-    // Face buttons
-    rpt->buttons.a = (b2 >> 6) & 1;
-    rpt->buttons.b = (b2 >> 5) & 1;
-    rpt->buttons.x = (b2 >> 4) & 1;
-    rpt->buttons.y = (b2 >> 3) & 1;
-
-    // Thumbsticks
-    rpt->buttons.l1 = (b2 >> 0) & 1;
-    rpt->buttons.r1 = (b1 >> 7) & 1;
-
-    // Shoulders and triggers
-    rpt->buttons.l2 = (b2 >> 2) & 1;
-    rpt->buttons.r2 = (b2 >> 1) & 1;
-    rpt->buttons.l3 = (b1 >> 2) & 1;
-    rpt->buttons.r3 = (b1 >> 3) & 1;
-
-    // Extra buttons
-    rpt->buttons.l4     = (b1 >> 1) & 1;
-    rpt->buttons.r4     = (b1 >> 0) & 1;
-    rpt->buttons.select = (b1 >> 6) & 1;
-    rpt->buttons.start  = (b1 >> 5) & 1;
-    rpt->buttons.home   = (b1 >> 4) & 1;
-
-    rpt->lx = data[4];
-    rpt->ly = data[5];
-    rpt->rx = data[6];
-    rpt->ry = data[7];
-    rpt->lt = data[8];
-    rpt->rt = data[9];
 }
 
 static void print_gamepad_report(const gamepad_report_t* rpt, int length) {
@@ -616,9 +463,20 @@ void draw_gamepad_visual(const gamepad_report_t* rpt) {
 static void hid_host_generic_report_callback(const uint8_t* const data, const int length) {
     hid_print_new_device_report_header(HID_PROTOCOL_NONE);
 
+    // Hex string of full report (e.g., "03 08 04 00 80 80 80 80 89 00 00")
+    static char hex_string[3 * 64] = {0};  // Safe for up to 64 bytes
+    char*       p                  = hex_string;
+
+    for (int i = 0; i < length; i++) {
+        p += sprintf(p, "%02X ", data[i]);
+    }
+    if (p > hex_string) *(p - 1) = '\0';
+
+    cls();
+    pax_draw_text(&fb, BLACK, pax_font_sky_mono, 16, 10, 180, hex_string);
+
     if (length >= 10) {
-        gamepad_report_t rpt = {0};
-        parse_gamepad_report(&rpt, data, length);
+        gamepad_report_t rpt = parse_gamepad_report(data, length);
         draw_gamepad_visual(&rpt);
         print_gamepad_report(&rpt, length);
     } else {
