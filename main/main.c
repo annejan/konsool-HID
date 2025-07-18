@@ -56,39 +56,41 @@ void cls(void) {
 typedef struct {
     uint8_t report_id;
 
-    // Named buttons (bitfields decoded)
-    bool a;
-    bool b;
-    bool x;
-    bool y;
+    union {
+        struct {
+            uint32_t a : 1;
+            uint32_t b : 1;
+            uint32_t x : 1;
+            uint32_t y : 1;
 
-    bool select;
-    bool start;
+            uint32_t select : 1;
+            uint32_t start  : 1;
 
-    bool l1;
-    bool r1;
-    bool l2;
-    bool r2;
-    bool l3;
-    bool r3;
+            uint32_t l1 : 1;
+            uint32_t r1 : 1;
+            uint32_t l2 : 1;
+            uint32_t r2 : 1;
+            uint32_t l3 : 1;
+            uint32_t r3 : 1;
 
-    bool home;
+            uint32_t home : 1;
 
-    bool l4;
-    bool r4;
+            uint32_t l4 : 1;
+            uint32_t r4 : 1;
 
-    // D-Pad
-    bool up;
-    bool down;
-    bool left;
-    bool right;
+            uint32_t up    : 1;
+            uint32_t down  : 1;
+            uint32_t left  : 1;
+            uint32_t right : 1;
 
-    uint8_t lx;  // Left stick X
-    uint8_t ly;  // Left stick Y
-    uint8_t rx;  // Right stick X
-    uint8_t ry;  // Right stick Y
-    uint8_t lt;  // Left trigger
-    uint8_t rt;  // Right trigger
+            uint32_t _reserved : 13;  // Up to 32 bits total
+        };
+        uint32_t val;
+    } buttons;
+
+    uint8_t lx, ly;
+    uint8_t rx, ry;
+    uint8_t lt, rt;
 } gamepad_report_t;
 
 typedef struct {
@@ -500,37 +502,39 @@ static void parse_gamepad_report(gamepad_report_t* rpt, const uint8_t* data, int
 
     rpt->report_id = data[0];
 
-    uint8_t b1 = data[1];
-    uint8_t b2 = data[2];
-    uint8_t b3 = data[3];
+    uint8_t hat = data[1];
+    uint8_t b1  = data[2];
+    uint8_t b2  = data[3];
 
-    rpt->up    = (b1 == 0x00);
-    rpt->right = (b1 == 0x02);
-    rpt->down  = (b1 == 0x04);
-    rpt->left  = (b1 == 0x06);
+    rpt->buttons.val = 0;
 
-    rpt->a = b3 & 0x40;
-    rpt->b = b3 & 0x20;
-    rpt->x = b3 & 0x10;
-    rpt->y = b3 & 0x08;
+    rpt->buttons.up    = (hat == 0x00 || hat == 0x01 || hat == 0x07);
+    rpt->buttons.right = (hat == 0x01 || hat == 0x02 || hat == 0x03);
+    rpt->buttons.down  = (hat == 0x03 || hat == 0x04 || hat == 0x05);
+    rpt->buttons.left  = (hat == 0x05 || hat == 0x06 || hat == 0x07);
 
-    rpt->l1 = b3 & (1 << 0);
-    rpt->r1 = b2 & 0x80;
+    // Face buttons
+    rpt->buttons.a = (b2 >> 6) & 1;
+    rpt->buttons.b = (b2 >> 5) & 1;
+    rpt->buttons.x = (b2 >> 4) & 1;
+    rpt->buttons.y = (b2 >> 3) & 1;
 
-    rpt->l2 = b3 & (1 << 2);
-    rpt->r2 = b3 & (1 << 1);
+    // Thumbsticks
+    rpt->buttons.l1 = (b2 >> 0) & 1;
+    rpt->buttons.r1 = (b1 >> 7) & 1;
 
-    rpt->l3 = b2 & 0x04;
-    rpt->r3 = b2 & 0x08;
-    ;
+    // Shoulders and triggers
+    rpt->buttons.l2 = (b2 >> 2) & 1;
+    rpt->buttons.r2 = (b2 >> 1) & 1;
+    rpt->buttons.l3 = (b1 >> 2) & 1;
+    rpt->buttons.r3 = (b1 >> 3) & 1;
 
-    rpt->l4 = b2 & 0x02;
-    rpt->r4 = b2 & 0x01;
-
-    rpt->select = b2 & 0x40;
-    rpt->start  = b2 & 0x20;
-
-    rpt->home = b2 & 0x10;
+    // Extra buttons
+    rpt->buttons.l4     = (b1 >> 1) & 1;
+    rpt->buttons.r4     = (b1 >> 0) & 1;
+    rpt->buttons.select = (b1 >> 6) & 1;
+    rpt->buttons.start  = (b1 >> 5) & 1;
+    rpt->buttons.home   = (b1 >> 4) & 1;
 
     rpt->lx = data[4];
     rpt->ly = data[5];
@@ -549,9 +553,11 @@ static void print_gamepad_report(const gamepad_report_t* rpt, int length) {
 
     const char* btn_labels[] = {"A",  "B",  "X",      "Y",     "L1",   "R1",   "L2",    "R2", "L3",  "R3",
                                 "L4", "R4", "Select", "Start", "Home", "Left", "Right", "Up", "Down"};
-    const bool  btn_states[] = {rpt->a,    rpt->b,    rpt->x,     rpt->y,  rpt->l1,  rpt->r1,     rpt->l2,
-                                rpt->r2,   rpt->l3,   rpt->r3,    rpt->l4, rpt->r4,  rpt->select, rpt->start,
-                                rpt->home, rpt->left, rpt->right, rpt->up, rpt->down};
+    const bool  btn_states[] = {rpt->buttons.a,      rpt->buttons.b,     rpt->buttons.x,    rpt->buttons.y,
+                                rpt->buttons.l1,     rpt->buttons.r1,    rpt->buttons.l2,   rpt->buttons.r2,
+                                rpt->buttons.l3,     rpt->buttons.r3,    rpt->buttons.l4,   rpt->buttons.r4,
+                                rpt->buttons.select, rpt->buttons.start, rpt->buttons.home, rpt->buttons.left,
+                                rpt->buttons.right,  rpt->buttons.up,    rpt->buttons.down};
 
     button_line[0] = '\0';
     strcat(button_line, "Buttons:");
