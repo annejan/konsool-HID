@@ -21,6 +21,22 @@ static char const    TAG[]           = "USB HID";
 static QueueHandle_t hid_event_queue = NULL;
 static QueueHandle_t bsp_event_queue = NULL;
 
+static void print_report_descriptor(hid_host_device_handle_t hid_dev) {
+    size_t         desc_len = 0;
+    const uint8_t* desc     = hid_host_get_report_descriptor(hid_dev, &desc_len);
+    if (!desc || desc_len == 0) {
+        ESP_LOGW(TAG, "No HID report descriptor");
+        return;
+    }
+
+    printf("HID report descriptor (%u bytes):\n", (unsigned)desc_len);
+    for (size_t i = 0; i < desc_len; i++) {
+        printf("%02X ", desc[i]);
+        if ((i + 1) % 16 == 0) printf("\n");
+    }
+    printf("\n");
+}
+
 static void send_navigation_event(bsp_input_navigation_key_t key, bool state, uint32_t modifiers) {
     bsp_input_event_t event = {
         .type                      = INPUT_EVENT_TYPE_NAVIGATION,
@@ -195,7 +211,7 @@ static void hid_host_mouse_report_callback(const uint8_t* const data, const int 
         send_navigation_event(BSP_INPUT_NAVIGATION_KEY_GAMEPAD_B, 1, 0);
     }
 
-    ESP_LOGI(TAG, "Mouse X: %06d\tY: %06d\t|%c|%c|%c| Scroll: %03d Tilt: %03d", x_pos, y_pos,
+    ESP_LOGD(TAG, "Mouse X: %06d\tY: %06d\t|%c|%c|%c| Scroll: %03d Tilt: %03d", x_pos, y_pos,
              (mouse_report.buttons.button1 ? 'o' : ' '), (mouse_report.buttons.button3 ? 'o' : ' '),
              (mouse_report.buttons.button2 ? 'o' : ' '), x_scroll, y_scroll);
 }
@@ -499,30 +515,31 @@ static void hid_host_keyboard_report_callback(const uint8_t* data, size_t length
         return;
     }
 
-    static uint8_t prev_keys[HID_KEYBOARD_KEY_MAX] = {0};
-    key_event_t    key_event;
+    // static uint8_t prev_keys[HID_KEYBOARD_KEY_MAX] = {0};
+    // key_event_t    key_event;
 
-    for (int i = 0; i < HID_KEYBOARD_KEY_MAX; i++) {
+    // for (int i = 0; i < HID_KEYBOARD_KEY_MAX; i++) {
 
-        // key has been released verification
-        if (prev_keys[i] > HID_KEY_ERROR_UNDEFINED && !key_found(kb_report->key, prev_keys[i], HID_KEYBOARD_KEY_MAX)) {
-            key_event.key_code = prev_keys[i];
-            key_event.modifier = 0;
-            key_event.state    = KEY_STATE_RELEASED;
-            key_event_callback(&key_event);
-        }
+    //     // key has been released verification
+    //     if (prev_keys[i] > HID_KEY_ERROR_UNDEFINED && !key_found(kb_report->key, prev_keys[i], HID_KEYBOARD_KEY_MAX))
+    //     {
+    //         key_event.key_code = prev_keys[i];
+    //         key_event.modifier = 0;
+    //         key_event.state    = KEY_STATE_RELEASED;
+    //         key_event_callback(&key_event);
+    //     }
 
-        // key has been pressed verification
-        if (kb_report->key[i] > HID_KEY_ERROR_UNDEFINED &&
-            !key_found(prev_keys, kb_report->key[i], HID_KEYBOARD_KEY_MAX)) {
-            key_event.key_code = kb_report->key[i];
-            key_event.modifier = kb_report->modifier.val;
-            key_event.state    = KEY_STATE_PRESSED;
-            key_event_callback(&key_event);
-        }
-    }
+    //     // key has been pressed verification
+    //     if (kb_report->key[i] > HID_KEY_ERROR_UNDEFINED &&
+    //         !key_found(prev_keys, kb_report->key[i], HID_KEYBOARD_KEY_MAX)) {
+    //         key_event.key_code = kb_report->key[i];
+    //         key_event.modifier = kb_report->modifier.val;
+    //         key_event.state    = KEY_STATE_PRESSED;
+    //         key_event_callback(&key_event);
+    //     }
+    // }
 
-    memcpy(prev_keys, &kb_report->key, HID_KEYBOARD_KEY_MAX);
+    // memcpy(prev_keys, &kb_report->key, HID_KEYBOARD_KEY_MAX);
 }
 
 /**
@@ -541,10 +558,10 @@ static void hid_host_interface_callback(hid_host_device_handle_t         hid_dev
 
     switch (event) {
         case HID_HOST_INTERFACE_EVENT_INPUT_REPORT:
-            ESP_LOGI(TAG, "HID Device, protocol '%s' INPUT_REPORT", hid_proto_name_str[dev_params.proto]);
+            ESP_LOGD(TAG, "HID Device, protocol '%s' INPUT_REPORT", hid_proto_name_str[dev_params.proto]);
             ESP_ERROR_CHECK(hid_host_device_get_raw_input_report_data(hid_device_handle, data, 64, &data_length));
 
-            // print_report_descriptor(hid_device_handle);
+            print_report_descriptor(hid_device_handle);
 
             if (HID_SUBCLASS_BOOT_INTERFACE == dev_params.sub_class) {
                 if (HID_PROTOCOL_KEYBOARD == dev_params.proto) {
@@ -608,6 +625,7 @@ static void hid_host_device_event(hid_host_device_handle_t hid_device_handle, co
             break;
     }
 }
+
 /**
  * @brief Start USB Host install and handle common USB host library events
  *
