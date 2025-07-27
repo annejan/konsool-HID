@@ -151,8 +151,27 @@ static void hid_host_mouse_report_callback(const uint8_t* const data, const int 
     // Calculate absolute position from displacement
     x_pos    += mouse_report.x_displacement;
     y_pos    += mouse_report.y_displacement;
-    x_scroll += mouse_report.scroll;
-    y_scroll += mouse_report.tilt;
+    
+    x_scroll += mouse_report.tilt;
+    y_scroll += mouse_report.scroll;
+
+    if (mouse_report.x_displacement > 10) {
+        send_navigation_event(BSP_INPUT_NAVIGATION_KEY_RIGHT, 1, 0);
+    } else if (mouse_report.x_displacement < -10) {
+        send_navigation_event(BSP_INPUT_NAVIGATION_KEY_LEFT, 1, 0);
+    }
+
+    if (mouse_report.y_displacement > 10) {
+        send_navigation_event(BSP_INPUT_NAVIGATION_KEY_DOWN, 1, 0);
+    } else if (mouse_report.y_displacement < -10) {
+        send_navigation_event(BSP_INPUT_NAVIGATION_KEY_UP, 1, 0);
+    }
+
+    if (mouse_report.scroll > 10) {
+        send_navigation_event(BSP_INPUT_NAVIGATION_KEY_PGUP, 1, 0);
+    } else if (mouse_report.scroll < -10) {
+        send_navigation_event(BSP_INPUT_NAVIGATION_KEY_PGDN, 1, 0);
+    }
 
     if (mouse_report.buttons.button1) {
         send_navigation_event(BSP_INPUT_NAVIGATION_KEY_GAMEPAD_A, 1, 0);
@@ -266,6 +285,20 @@ static void print_gamepad_report(const gamepad_report_t* rpt, int length) {
 static void hid_host_generic_report_callback(const uint8_t* const data, const int length) {
     if (length >= 10) {
         gamepad_report_t rpt = parse_gamepad_report(data, length);
+
+        int lx = ((int)rpt.lx - 128);
+        int ly = ((int)rpt.ly - 128);
+
+        if (lx > 50) {
+             send_navigation_event(BSP_INPUT_NAVIGATION_KEY_RIGHT, 1, 0);
+        } else if (lx < -50) {
+            send_navigation_event(BSP_INPUT_NAVIGATION_KEY_LEFT, 1, 0);
+        }
+        if (ly > 50) {
+             send_navigation_event(BSP_INPUT_NAVIGATION_KEY_UP, 1, 0);
+        } else if (ly < -50) {
+            send_navigation_event(BSP_INPUT_NAVIGATION_KEY_DOWN, 1, 0);
+        }
 
         if (rpt.buttons.up) {
             send_navigation_event(BSP_INPUT_NAVIGATION_KEY_UP, 1, 0);
