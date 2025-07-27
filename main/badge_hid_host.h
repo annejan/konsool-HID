@@ -11,8 +11,6 @@
 
 #include <stdbool.h>
 #include <stdio.h>
-#include "bsp/device.h"
-#include "bsp/input.h"
 #include "esp_err.h"
 #include "usb/hid_host.h"
 

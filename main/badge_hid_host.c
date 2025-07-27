@@ -293,6 +293,13 @@ static void hid_host_generic_report_callback(const uint8_t* const data, const in
             send_navigation_event(BSP_INPUT_NAVIGATION_KEY_GAMEPAD_Y, 1, 0);
         }
 
+        if (rpt.buttons.start) {
+            send_navigation_event(BSP_INPUT_NAVIGATION_KEY_START, 1, 0);
+        }
+        if (rpt.buttons.select) {
+            send_navigation_event(BSP_INPUT_NAVIGATION_KEY_SELECT, 1, 0);
+        }
+
         print_gamepad_report(&rpt, length);
     } else {
         ESP_LOGW(TAG, "Received too-short report (%d bytes)\n", length);

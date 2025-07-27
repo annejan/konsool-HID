@@ -5,8 +5,6 @@
 #include "bsp/input.h"
 #include "bsp/power.h"
 #include "driver/gpio.h"
-#include "esp_lcd_panel_ops.h"
-#include "esp_lcd_types.h"
 #include "esp_log.h"
 #include "hal/lcd_types.h"
 #include "nvs_flash.h"
