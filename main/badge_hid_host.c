@@ -260,7 +260,7 @@ esp_err_t badge_hid_init(QueueHandle_t* event_queue) {
     return ESP_OK;
 }
 
-esp_err_t badge_hid_deint(void) {
+esp_err_t badge_hid_deinit(void) {
     usb_host_lib_info_t lib_info;
     ESP_ERROR_CHECK(usb_host_lib_info(&lib_info));
     if (lib_info.num_devices == 0) {
