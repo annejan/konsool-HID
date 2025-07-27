@@ -20,23 +20,6 @@ static char const    TAG[]           = "USB HID";
 static QueueHandle_t hid_event_queue = NULL;
 static QueueHandle_t bsp_event_queue = NULL;
 
-static void print_report_descriptor(hid_host_device_handle_t hid_dev) {
-    size_t         report_desc_len;
-    const uint8_t* report_desc = hid_host_get_report_descriptor(hid_dev, &report_desc_len);
-    if (report_desc && report_desc_len > 0) {
-        printf("HID report descriptor (%u bytes):\n", (unsigned)report_desc_len);
-        for (size_t i = 0; i < report_desc_len; i++) {
-            printf("%02X ", report_desc[i]);
-            if ((i + 1) % 16 == 0) {
-                printf("\n");
-            }
-        }
-        printf("\n");
-    } else {
-        printf("No report descriptor available\n");
-    }
-}
-
 static void send_navigation_event(bsp_input_navigation_key_t key, bool state, uint32_t modifiers) {
     bsp_input_event_t event = {
         .type                      = INPUT_EVENT_TYPE_NAVIGATION,
@@ -174,12 +157,9 @@ static void hid_host_mouse_report_callback(const uint8_t* const data, const int 
         send_navigation_event(BSP_INPUT_NAVIGATION_KEY_GAMEPAD_B, 1, 0);
     }
 
-    char text[64];
-    snprintf(text, sizeof(text), "Mouse X: %06d\tY: %06d\t|%c|%c|%c| Scroll: %03d Tilt: %03d", x_pos, y_pos,
+    ESP_LOGI(TAG, "Mouse X: %06d\tY: %06d\t|%c|%c|%c| Scroll: %03d Tilt: %03d", x_pos, y_pos,
              (mouse_report.buttons.button1 ? 'o' : ' '), (mouse_report.buttons.button3 ? 'o' : ' '),
              (mouse_report.buttons.button2 ? 'o' : ' '), x_scroll, y_scroll);
-    printf("%s\n", text);
-    fflush(stdout);
 }
 
 /**
@@ -268,7 +248,7 @@ static void print_gamepad_report(const gamepad_report_t* rpt, int length) {
         }
     }
 
-    printf("%s\n%s\n%s\n", button_line, line1, line2);
+    ESP_LOGI(TAG, "%s\n%s\n%s\n", button_line, line1, line2);
 }
 
 /**
@@ -311,7 +291,7 @@ static void hid_host_generic_report_callback(const uint8_t* const data, const in
 
         print_gamepad_report(&rpt, length);
     } else {
-        printf("Received too-short report (%d bytes)\n", length);
+        ESP_LOGW(TAG, "Received too-short report (%d bytes)\n", length);
     }
 }
 
