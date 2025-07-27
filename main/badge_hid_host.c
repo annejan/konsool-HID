@@ -13,6 +13,7 @@
 #include "bsp/input.h"
 #include "esp_log.h"
 #include "usb/hid_host.h"
+#include "usb/hid_usage_keyboard.h"
 #include "usb/hid_usage_mouse.h"
 #include "usb/usb_host.h"
 
@@ -26,6 +27,20 @@ static void send_navigation_event(bsp_input_navigation_key_t key, bool state, ui
         .args_navigation.key       = key,
         .args_navigation.modifiers = modifiers,
         .args_navigation.state     = state,
+    };
+    if (bsp_event_queue) {
+        xQueueSend(bsp_event_queue, &event, 0);
+    } else {
+        ESP_LOGW(TAG, "No BSP event queue!");
+    }
+}
+
+static void send_keyboard_event(char ascii, char const* utf8, uint32_t modifiers) {
+    bsp_input_event_t event = {
+        .type                    = INPUT_EVENT_TYPE_KEYBOARD,
+        .args_keyboard.ascii     = ascii,
+        .args_keyboard.utf8      = utf8,
+        .args_keyboard.modifiers = modifiers,
     };
     if (bsp_event_queue) {
         xQueueSend(bsp_event_queue, &event, 0);
@@ -149,27 +164,27 @@ static void hid_host_mouse_report_callback(const uint8_t* const data, const int 
     static int y_scroll = 0;
 
     // Calculate absolute position from displacement
-    x_pos    += mouse_report.x_displacement;
-    y_pos    += mouse_report.y_displacement;
-    
+    x_pos += mouse_report.x_displacement;
+    y_pos += mouse_report.y_displacement;
+
     x_scroll += mouse_report.tilt;
     y_scroll += mouse_report.scroll;
 
-    if (mouse_report.x_displacement > 10) {
+    if (mouse_report.x_displacement > 100) {
         send_navigation_event(BSP_INPUT_NAVIGATION_KEY_RIGHT, 1, 0);
-    } else if (mouse_report.x_displacement < -10) {
+    } else if (mouse_report.x_displacement < -100) {
         send_navigation_event(BSP_INPUT_NAVIGATION_KEY_LEFT, 1, 0);
     }
 
-    if (mouse_report.y_displacement > 10) {
+    if (mouse_report.y_displacement > 100) {
         send_navigation_event(BSP_INPUT_NAVIGATION_KEY_DOWN, 1, 0);
-    } else if (mouse_report.y_displacement < -10) {
+    } else if (mouse_report.y_displacement < -100) {
         send_navigation_event(BSP_INPUT_NAVIGATION_KEY_UP, 1, 0);
     }
 
-    if (mouse_report.scroll > 10) {
+    if (mouse_report.scroll > 1) {
         send_navigation_event(BSP_INPUT_NAVIGATION_KEY_PGUP, 1, 0);
-    } else if (mouse_report.scroll < -10) {
+    } else if (mouse_report.scroll < -1) {
         send_navigation_event(BSP_INPUT_NAVIGATION_KEY_PGDN, 1, 0);
     }
 
@@ -290,12 +305,12 @@ static void hid_host_generic_report_callback(const uint8_t* const data, const in
         int ly = ((int)rpt.ly - 128);
 
         if (lx > 50) {
-             send_navigation_event(BSP_INPUT_NAVIGATION_KEY_RIGHT, 1, 0);
+            send_navigation_event(BSP_INPUT_NAVIGATION_KEY_RIGHT, 1, 0);
         } else if (lx < -50) {
             send_navigation_event(BSP_INPUT_NAVIGATION_KEY_LEFT, 1, 0);
         }
         if (ly > 50) {
-             send_navigation_event(BSP_INPUT_NAVIGATION_KEY_UP, 1, 0);
+            send_navigation_event(BSP_INPUT_NAVIGATION_KEY_UP, 1, 0);
         } else if (ly < -50) {
             send_navigation_event(BSP_INPUT_NAVIGATION_KEY_DOWN, 1, 0);
         }
@@ -340,6 +355,177 @@ static void hid_host_generic_report_callback(const uint8_t* const data, const in
 }
 
 /**
+ * @brief Scancode to ascii table
+ */
+const uint8_t keycode2ascii[57][2] = {
+    {0, 0},                                               /* HID_KEY_NO_PRESS        */
+    {0, 0},                                               /* HID_KEY_ROLLOVER        */
+    {0, 0},                                               /* HID_KEY_POST_FAIL       */
+    {0, 0},                                               /* HID_KEY_ERROR_UNDEFINED */
+    {'a', 'A'},                                           /* HID_KEY_A               */
+    {'b', 'B'},                                           /* HID_KEY_B               */
+    {'c', 'C'},                                           /* HID_KEY_C               */
+    {'d', 'D'},                                           /* HID_KEY_D               */
+    {'e', 'E'},                                           /* HID_KEY_E               */
+    {'f', 'F'},                                           /* HID_KEY_F               */
+    {'g', 'G'},                                           /* HID_KEY_G               */
+    {'h', 'H'},                                           /* HID_KEY_H               */
+    {'i', 'I'},                                           /* HID_KEY_I               */
+    {'j', 'J'},                                           /* HID_KEY_J               */
+    {'k', 'K'},                                           /* HID_KEY_K               */
+    {'l', 'L'},                                           /* HID_KEY_L               */
+    {'m', 'M'},                                           /* HID_KEY_M               */
+    {'n', 'N'},                                           /* HID_KEY_N               */
+    {'o', 'O'},                                           /* HID_KEY_O               */
+    {'p', 'P'},                                           /* HID_KEY_P               */
+    {'q', 'Q'},                                           /* HID_KEY_Q               */
+    {'r', 'R'},                                           /* HID_KEY_R               */
+    {'s', 'S'},                                           /* HID_KEY_S               */
+    {'t', 'T'},                                           /* HID_KEY_T               */
+    {'u', 'U'},                                           /* HID_KEY_U               */
+    {'v', 'V'},                                           /* HID_KEY_V               */
+    {'w', 'W'},                                           /* HID_KEY_W               */
+    {'x', 'X'},                                           /* HID_KEY_X               */
+    {'y', 'Y'},                                           /* HID_KEY_Y               */
+    {'z', 'Z'},                                           /* HID_KEY_Z               */
+    {'1', '!'},                                           /* HID_KEY_1               */
+    {'2', '@'},                                           /* HID_KEY_2               */
+    {'3', '#'},                                           /* HID_KEY_3               */
+    {'4', '$'},                                           /* HID_KEY_4               */
+    {'5', '%'},                                           /* HID_KEY_5               */
+    {'6', '^'},                                           /* HID_KEY_6               */
+    {'7', '&'},                                           /* HID_KEY_7               */
+    {'8', '*'},                                           /* HID_KEY_8               */
+    {'9', '('},                                           /* HID_KEY_9               */
+    {'0', ')'},                                           /* HID_KEY_0               */
+    {KEYBOARD_ENTER_MAIN_CHAR, KEYBOARD_ENTER_MAIN_CHAR}, /* HID_KEY_ENTER           */
+    {0, 0},                                               /* HID_KEY_ESC             */
+    {'\b', 0},                                            /* HID_KEY_DEL             */
+    {0, 0},                                               /* HID_KEY_TAB             */
+    {' ', ' '},                                           /* HID_KEY_SPACE           */
+    {'-', '_'},                                           /* HID_KEY_MINUS           */
+    {'=', '+'},                                           /* HID_KEY_EQUAL           */
+    {'[', '{'},                                           /* HID_KEY_OPEN_BRACKET    */
+    {']', '}'},                                           /* HID_KEY_CLOSE_BRACKET   */
+    {'\\', '|'},                                          /* HID_KEY_BACK_SLASH      */
+    {'\\', '|'},
+    /* HID_KEY_SHARP           */  // HOTFIX: for NonUS Keyboards repeat HID_KEY_BACK_SLASH
+    {';', ':'},                    /* HID_KEY_COLON           */
+    {'\'', '"'},                   /* HID_KEY_QUOTE           */
+    {'`', '~'},                    /* HID_KEY_TILDE           */
+    {',', '<'},                    /* HID_KEY_LESS            */
+    {'.', '>'},                    /* HID_KEY_GREATER         */
+    {'/', '?'}                     /* HID_KEY_SLASH           */
+};
+
+/**
+ * @brief HID Keyboard modifier verification for capitalization application (right or left shift)
+ *
+ * @param[in] modifier
+ * @return true  Modifier was pressed (left or right shift)
+ * @return false Modifier was not pressed (left or right shift)
+ *
+ */
+static inline bool hid_keyboard_is_modifier_shift(uint8_t modifier) {
+    if (((modifier & HID_LEFT_SHIFT) == HID_LEFT_SHIFT) || ((modifier & HID_RIGHT_SHIFT) == HID_RIGHT_SHIFT)) {
+        return true;
+    }
+    return false;
+}
+
+/**
+ * @brief HID Keyboard get char symbol from key code
+ *
+ * @param[in] modifier  Keyboard modifier data
+ * @param[in] key_code  Keyboard key code
+ * @param[in] key_char  Pointer to key char data
+ *
+ * @return true  Key scancode converted successfully
+ * @return false Key scancode unknown
+ */
+static inline bool hid_keyboard_get_char(uint8_t modifier, uint8_t key_code, unsigned char* key_char) {
+    uint8_t mod = (hid_keyboard_is_modifier_shift(modifier)) ? 1 : 0;
+
+    if ((key_code >= HID_KEY_A) && (key_code <= HID_KEY_SLASH)) {
+        *key_char = keycode2ascii[key_code][mod];
+    } else {
+        // All other key pressed
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * @brief Key Event. Key event with the key code, state and modifier.
+ *
+ * @param[in] key_event Pointer to Key Event structure
+ *
+ */
+static void key_event_callback(key_event_t* key_event) {
+    unsigned char key_char;
+
+    if (KEY_STATE_PRESSED == key_event->state) {
+        if (hid_keyboard_get_char(key_event->modifier, key_event->key_code, &key_char)) {
+
+            ESP_LOGI(TAG, "Keyboard event %c (%02X)", key_char, key_event->key_code);
+
+            send_keyboard_event(key_char, NULL, key_event->modifier);
+        }
+    }
+}
+
+/**
+ * @brief Key buffer scan code search.
+ *
+ * @param[in] src       Pointer to source buffer where to search
+ * @param[in] key       Key scancode to search
+ * @param[in] length    Size of the source buffer
+ */
+static inline bool key_found(const uint8_t* const src, uint8_t key, unsigned int length) {
+    for (unsigned int i = 0; i < length; i++) {
+        if (src[i] == key) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void hid_host_keyboard_report_callback(const uint8_t* data, size_t length) {
+    hid_keyboard_input_report_boot_t* kb_report = (hid_keyboard_input_report_boot_t*)data;
+
+    if (length < sizeof(hid_keyboard_input_report_boot_t)) {
+        ESP_LOGW(TAG, "Keybosard report too small!");
+        return;
+    }
+
+    static uint8_t prev_keys[HID_KEYBOARD_KEY_MAX] = {0};
+    key_event_t    key_event;
+
+    for (int i = 0; i < HID_KEYBOARD_KEY_MAX; i++) {
+
+        // key has been released verification
+        if (prev_keys[i] > HID_KEY_ERROR_UNDEFINED && !key_found(kb_report->key, prev_keys[i], HID_KEYBOARD_KEY_MAX)) {
+            key_event.key_code = prev_keys[i];
+            key_event.modifier = 0;
+            key_event.state    = KEY_STATE_RELEASED;
+            key_event_callback(&key_event);
+        }
+
+        // key has been pressed verification
+        if (kb_report->key[i] > HID_KEY_ERROR_UNDEFINED &&
+            !key_found(prev_keys, kb_report->key[i], HID_KEYBOARD_KEY_MAX)) {
+            key_event.key_code = kb_report->key[i];
+            key_event.modifier = kb_report->modifier.val;
+            key_event.state    = KEY_STATE_PRESSED;
+            key_event_callback(&key_event);
+        }
+    }
+
+    memcpy(prev_keys, &kb_report->key, HID_KEYBOARD_KEY_MAX);
+}
+
+/**
  * @brief USB HID Host interface callback
  *
  * @param[in] hid_device_handle  HID Device handle
@@ -362,7 +548,7 @@ static void hid_host_interface_callback(hid_host_device_handle_t         hid_dev
 
             if (HID_SUBCLASS_BOOT_INTERFACE == dev_params.sub_class) {
                 if (HID_PROTOCOL_KEYBOARD == dev_params.proto) {
-                    // hid_host_keyboard_report_callback(data, data_length);
+                    hid_host_keyboard_report_callback(data, data_length);
                 } else if (HID_PROTOCOL_MOUSE == dev_params.proto) {
                     hid_host_mouse_report_callback(data, data_length);
                 }
