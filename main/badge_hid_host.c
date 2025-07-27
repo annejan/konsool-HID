@@ -27,7 +27,11 @@ static void send_navigation_event(bsp_input_navigation_key_t key, bool state, ui
         .args_navigation.modifiers = modifiers,
         .args_navigation.state     = state,
     };
-    xQueueSend(bsp_event_queue, &event, 0);
+    if (bsp_event_queue) {
+        xQueueSend(bsp_event_queue, &event, 0);
+    } else {
+        ESP_LOGW(TAG, "No BSP event queue!");
+    }
 }
 
 /**
