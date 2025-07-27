@@ -314,6 +314,7 @@ static void print_gamepad_report(const gamepad_report_t* rpt, int length) {
  * @param[in] length  Length of input report data buffer
  */
 static void hid_host_generic_report_callback(const uint8_t* const data, const int length) {
+    ESP_LOGI(TAG, "Received generic report (%d bytes)\n", length);
     if (length >= 10) {
         gamepad_report_t rpt = parse_gamepad_report(data, length);
 
