@@ -1,7 +1,9 @@
 #include <stdio.h>
+#include "badge_hid_host.h"
 #include "bsp/device.h"
 #include "bsp/display.h"
 #include "bsp/input.h"
+#include "bsp/power.h"
 #include "driver/gpio.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_types.h"
@@ -12,7 +14,6 @@
 #include "pax_gfx.h"
 #include "pax_text.h"
 #include "portmacro.h"
-#include "badge_hid_host.h"
 
 // Constants
 static char const TAG[] = "main";
@@ -112,7 +113,10 @@ void app_main(void) {
     // Get input event queue from BSP
     ESP_ERROR_CHECK(bsp_input_get_queue(&input_event_queue));
 
-    ESP_ERROR_CHECK(badge_hid_init(&input_event_queue));
+    // Power to USB
+    bsp_power_set_usb_host_boost_enabled(true);
+
+    ESP_ERROR_CHECK(badge_hid_init(input_event_queue));
 
     ESP_LOGW(TAG, "Hello world!");
 

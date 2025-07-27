@@ -138,12 +138,5 @@ typedef struct {
 /* When set to 1 pressing ENTER will be extending with LineFeed during serial debug output */
 #define KEYBOARD_ENTER_LF_EXTEND 1
 
-esp_err_t badge_hid_init(QueueHandle_t* event_queue);
+esp_err_t badge_hid_init(QueueHandle_t event_queue);
 esp_err_t badge_hid_deinit(void);
-
-mouse_report_t parse_mouse_event(const uint8_t* const data, const int length);
-
-gamepad_report_t parse_gamepad_report(const uint8_t* data, int length);
-
-void hid_host_device_callback(hid_host_device_handle_t hid_device_handle, const hid_host_driver_event_t event,
-                              void* arg);
