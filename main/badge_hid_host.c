@@ -619,8 +619,8 @@ static void hid_host_device_event(hid_host_device_handle_t hid_device_handle, co
                         // print_report_descriptor(hid_device_handle);
                     }
                 }
-                ESP_ERROR_CHECK(hid_host_device_start(hid_device_handle));
             }
+            ESP_ERROR_CHECK(hid_host_device_start(hid_device_handle));
             break;
         default:
             break;
