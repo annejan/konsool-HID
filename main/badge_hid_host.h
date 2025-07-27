@@ -1,8 +1,41 @@
+/*
+ * HID host library for gamepad and mouse input devices.
+ * Contains low-level helpers for parsing raw USB HID input reports.
+
+ * SPDX-FileCopyrightText: 2022-2025 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2025 Badge.Team
+ *
+ * SPDX-License-Identifier: Unlicense OR CC0-1.0
+ */
 #pragma once
 
 #include <stdbool.h>
 #include <stdio.h>
+#include "bsp/device.h"
+#include "bsp/input.h"
+#include "esp_err.h"
+#include "usb/hid_host.h"
 
+#define MAX_FIELDS 32
+#define MAX_USAGES 32
+
+#define USAGE_PAGE_GENERIC_DESKTOP 0x01
+#define USAGE_PAGE_BUTTON          0x09
+#define USAGE_PAGE_CONSUMER        0x0C
+
+typedef struct {
+    uint16_t usage_page;
+    uint16_t usage_ids[MAX_USAGES];
+    uint8_t  count;
+    uint8_t  size;
+    uint16_t offset;
+    bool     relative;
+} hid_field_info;
+
+typedef struct {
+    hid_field_info fields[MAX_FIELDS];
+    size_t         num_fields;
+} hid_report_descriptor;
 typedef struct {
     uint8_t report_id;
 
@@ -60,6 +93,35 @@ typedef struct {
 } mouse_report_t;
 
 /**
+ * @brief APP event group
+ *
+ * Application logic can be different. There is a one among other ways to distinguish the
+ * event by application event group.
+ * In this example we have two event groups:
+ * APP_EVENT            - General event, which is APP_QUIT_PIN press event (Generally, it is IO0).
+ * APP_EVENT_HID_HOST   - HID Host Driver event, such as device connection/disconnection or input report.
+ */
+typedef enum {
+    APP_EVENT = 0,
+    APP_EVENT_HID_HOST
+} app_event_group_t;
+
+/**
+ * @brief APP event queue
+ *
+ * This event is used for delivering the HID Host event from callback to a task.
+ */
+typedef struct {
+    app_event_group_t event_group;
+    /* HID Host - Device related info */
+    struct {
+        hid_host_device_handle_t handle;
+        hid_host_driver_event_t  event;
+        void*                    arg;
+    } hid_host_device;
+} app_event_queue_t;
+
+/**
  * @brief Key event
  */
 typedef struct {
@@ -76,6 +138,12 @@ typedef struct {
 /* When set to 1 pressing ENTER will be extending with LineFeed during serial debug output */
 #define KEYBOARD_ENTER_LF_EXTEND 1
 
+esp_err_t badge_hid_init(QueueHandle_t* event_queue);
+esp_err_t badge_hid_deinit(void);
+
 mouse_report_t parse_mouse_event(const uint8_t* const data, const int length);
 
 gamepad_report_t parse_gamepad_report(const uint8_t* data, int length);
+
+void hid_host_device_callback(hid_host_device_handle_t hid_device_handle, const hid_host_driver_event_t event,
+                              void* arg);
