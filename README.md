@@ -1,11 +1,27 @@
-# Tanmatsu HID Host example
+# Tanmatsu HID Host Example
 
-Can detect keyboard, mouse and game controller.
+This project demonstrates a USB HID host implementation for the Tanmatsu platform.  
+It can detect and handle the following USB HID device types:
 
-Displays some info and state (possibly only via monitor).
+- 🖱️ Mouse
+- ⌨️ Keyboard
+- 🎮 Game Controller
+
+Basic state and input data is displayed via the serial monitor.
+
+## Features
+
+- Detects device connection and disconnection events
+- Parses HID report descriptors to determine device capabilities
+- Supports real-time input reporting (e.g. mouse movement, button presses)
+- Designed to support hot-plugging
+
+## Requirements
+
+- ESP-IDF v5.x
+- A Tanmatsu-compatible board with USB host support
 
 ## License
 
-Based on the Tanmatsu PAX template, released under terms of the [MIT license](https://opensource.org/license/mit). 
-
-The MIT license allows others to build upon your work without restrictions while also making sure you retain your attribution.
+This project is based on the Tanmatsu PAX template and is released under the [MIT License](https://opensource.org/license/mit).  
+You are free to use, modify, and distribute it — with proper attribution.
