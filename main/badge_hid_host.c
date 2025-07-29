@@ -10,32 +10,28 @@
 
 #include "badge_hid_host.h"
 #include <stdio.h>
+#include "badge_hid_drivers.h"
 #include "bsp/input.h"
 #include "esp_log.h"
+#include "esp_log_level.h"
 #include "usb/hid.h"
 #include "usb/hid_host.h"
 #include "usb/hid_usage_keyboard.h"
 #include "usb/hid_usage_mouse.h"
 #include "usb/usb_host.h"
 
-static char const    TAG[]           = "USB HID";
+static char const    TAG[]           = "BADGE_HID_HOST";
 static QueueHandle_t hid_event_queue = NULL;
 static QueueHandle_t bsp_event_queue = NULL;
 
-static void print_report_descriptor(hid_host_device_handle_t hid_dev) {
-    size_t         desc_len = 0;
-    const uint8_t* desc     = hid_host_get_report_descriptor(hid_dev, &desc_len);
+static const mouse_driver_t* active_mouse_driver = NULL;
+
+static void print_report_descriptor(const uint8_t* const desc, const int desc_len) {
     if (!desc || desc_len == 0) {
         ESP_LOGW(TAG, "No HID report descriptor");
         return;
     }
-
-    printf("HID report descriptor (%u bytes):\n", (unsigned)desc_len);
-    for (size_t i = 0; i < desc_len; i++) {
-        printf("%02X ", desc[i]);
-        if ((i + 1) % 16 == 0) printf("\n");
-    }
-    printf("\n");
+    ESP_LOG_BUFFER_HEX(TAG, desc, desc_len);
 }
 
 static void send_navigation_event(bsp_input_navigation_key_t key, bool state, uint32_t modifiers) {
@@ -223,10 +219,9 @@ static void hid_host_mouse_report_callback(const uint8_t* const data, const int 
  * This function should be implemented per controller type (e.g., PS4, Xbox).
  * It fills out the gamepad_report_t with button and axis values.
  *
- * @param rpt Pointer to the report struct to populate.
  * @param data Raw HID report data.
  * @param length Report length in bytes.
- * @return true if parsing was successful; false otherwise.
+ * @return gamepad_report_t
  */
 gamepad_report_t parse_gamepad_report(const uint8_t* data, int length) {
     gamepad_report_t rpt = {0};
@@ -303,9 +298,9 @@ static void print_gamepad_report(const gamepad_report_t* rpt, int length) {
         }
     }
 
-    ESP_LOGI(TAG, "%s", button_line);
-    ESP_LOGI(TAG, "%s", line1);
-    ESP_LOGI(TAG, "%s", line2);
+    ESP_LOGD(TAG, "%s", button_line);
+    ESP_LOGD(TAG, "%s", line1);
+    ESP_LOGD(TAG, "%s", line2);
 }
 
 /**
@@ -317,7 +312,7 @@ static void print_gamepad_report(const gamepad_report_t* rpt, int length) {
  * @param[in] length  Length of input report data buffer
  */
 static void hid_host_generic_report_callback(const uint8_t* const data, const int length) {
-    ESP_LOGI(TAG, "Received generic report (%d bytes)\n", length);
+    ESP_LOGI(TAG, "Received generic report (%d bytes)", length);
     if (length >= 10) {
         gamepad_report_t rpt = parse_gamepad_report(data, length);
 
@@ -370,7 +365,7 @@ static void hid_host_generic_report_callback(const uint8_t* const data, const in
 
         print_gamepad_report(&rpt, length);
     } else {
-        ESP_LOGW(TAG, "Received too-short report (%d bytes)\n", length);
+        ESP_LOGW(TAG, "Received too-short report (%d bytes)", length);
     }
 }
 
@@ -490,7 +485,7 @@ static void key_event_callback(key_event_t* key_event) {
 
             ESP_LOGI(TAG, "Keyboard event %c (%02X)", key_char, key_event->key_code);
 
-            send_keyboard_event(key_char, NULL, key_event->modifier);
+            // send_keyboard_event(key_char, NULL, key_event->modifier);
         }
     }
 }
@@ -515,35 +510,34 @@ static void hid_host_keyboard_report_callback(const uint8_t* data, size_t length
     hid_keyboard_input_report_boot_t* kb_report = (hid_keyboard_input_report_boot_t*)data;
 
     if (length < sizeof(hid_keyboard_input_report_boot_t)) {
-        ESP_LOGW(TAG, "Keybosard report too small!");
+        ESP_LOGW(TAG, "Keyboard report too small!");
         return;
     }
 
-    // static uint8_t prev_keys[HID_KEYBOARD_KEY_MAX] = {0};
-    // key_event_t    key_event;
+    static uint8_t prev_keys[HID_KEYBOARD_KEY_MAX] = {0};
+    key_event_t    key_event;
 
-    // for (int i = 0; i < HID_KEYBOARD_KEY_MAX; i++) {
+    for (int i = 0; i < HID_KEYBOARD_KEY_MAX; i++) {
 
-    //     // key has been released verification
-    //     if (prev_keys[i] > HID_KEY_ERROR_UNDEFINED && !key_found(kb_report->key, prev_keys[i], HID_KEYBOARD_KEY_MAX))
-    //     {
-    //         key_event.key_code = prev_keys[i];
-    //         key_event.modifier = 0;
-    //         key_event.state    = KEY_STATE_RELEASED;
-    //         key_event_callback(&key_event);
-    //     }
+        // key has been released verification
+        if (prev_keys[i] > HID_KEY_ERROR_UNDEFINED && !key_found(kb_report->key, prev_keys[i], HID_KEYBOARD_KEY_MAX)) {
+            key_event.key_code = prev_keys[i];
+            key_event.modifier = 0;
+            key_event.state    = KEY_STATE_RELEASED;
+            key_event_callback(&key_event);
+        }
 
-    //     // key has been pressed verification
-    //     if (kb_report->key[i] > HID_KEY_ERROR_UNDEFINED &&
-    //         !key_found(prev_keys, kb_report->key[i], HID_KEYBOARD_KEY_MAX)) {
-    //         key_event.key_code = kb_report->key[i];
-    //         key_event.modifier = kb_report->modifier.val;
-    //         key_event.state    = KEY_STATE_PRESSED;
-    //         key_event_callback(&key_event);
-    //     }
-    // }
+        // key has been pressed verification
+        if (kb_report->key[i] > HID_KEY_ERROR_UNDEFINED &&
+            !key_found(prev_keys, kb_report->key[i], HID_KEYBOARD_KEY_MAX)) {
+            key_event.key_code = kb_report->key[i];
+            key_event.modifier = kb_report->modifier.val;
+            key_event.state    = KEY_STATE_PRESSED;
+            key_event_callback(&key_event);
+        }
+    }
 
-    // memcpy(prev_keys, &kb_report->key, HID_KEYBOARD_KEY_MAX);
+    memcpy(prev_keys, &kb_report->key, HID_KEYBOARD_KEY_MAX);
 }
 
 /**
@@ -565,7 +559,7 @@ static void hid_host_interface_callback(hid_host_device_handle_t         hid_dev
             ESP_LOGD(TAG, "HID Device, protocol '%s' INPUT_REPORT", hid_proto_name_str[dev_params.proto]);
             ESP_ERROR_CHECK(hid_host_device_get_raw_input_report_data(hid_device_handle, data, 64, &data_length));
 
-            print_report_descriptor(hid_device_handle);
+            // print_report_descriptor(hid_device_handle);
 
             if (HID_SUBCLASS_BOOT_INTERFACE == dev_params.sub_class) {
                 if (HID_PROTOCOL_KEYBOARD == dev_params.proto) {
@@ -591,6 +585,24 @@ static void hid_host_interface_callback(hid_host_device_handle_t         hid_dev
     }
 }
 
+// Function to convert wide string to regular UTF-8 (if needed)
+static void utf16le_to_ascii(char* dest, const wchar_t* src, size_t max_len) {
+    size_t i;
+    for (i = 0; i < max_len - 1 && src[i]; i++) {
+        uint16_t ch = (uint16_t)src[i];
+        dest[i]     = (ch < 128) ? (char)ch : '?';  // replace non-ASCII with '?'
+    }
+    dest[i] = '\0';
+}
+
+void badge_hid_register_mouse_driver(const mouse_driver_t* driver) {
+    active_mouse_driver = driver;
+}
+
+void badge_hid_unregister_mouse_driver(void) {
+    active_mouse_driver = NULL;
+}
+
 /**
  * @brief USB HID Host Device event
  *
@@ -614,14 +626,34 @@ static void hid_host_device_event(hid_host_device_handle_t hid_device_handle, co
                 ESP_ERROR_CHECK(hid_class_request_set_protocol(hid_device_handle, HID_REPORT_PROTOCOL_BOOT));
                 if (HID_PROTOCOL_KEYBOARD == dev_params.proto) {
                     ESP_ERROR_CHECK(hid_class_request_set_idle(hid_device_handle, 0, 0));
-                }
-                if (HID_PROTOCOL_MOUSE == dev_params.proto) {  // Luxury mouse support
-                    // hid_class_request_set_protocol(hid_device_handle, HID_REPORT_PROTOCOL_REPORT);
-
-                    // print_report_descriptor(hid_device_handle);
+                } else if (HID_PROTOCOL_MOUSE == dev_params.proto) {  // Luxury mouse support
+                    hid_class_request_set_protocol(hid_device_handle, HID_REPORT_PROTOCOL_REPORT);
                 }
             }
             ESP_ERROR_CHECK(hid_host_device_start(hid_device_handle));
+
+            hid_host_dev_info_t info;
+            ESP_ERROR_CHECK(hid_host_get_device_info(hid_device_handle, &info));
+
+            if (ESP_LOG_ENABLED(ESP_LOG_INFO)) {
+
+                char manufacturer[HID_STR_DESC_MAX_LENGTH];
+                char product[HID_STR_DESC_MAX_LENGTH];
+                utf16le_to_ascii(manufacturer, info.iManufacturer, HID_STR_DESC_MAX_LENGTH);
+                utf16le_to_ascii(product, info.iProduct, HID_STR_DESC_MAX_LENGTH);
+
+                ESP_LOGI(TAG, "VID:PID %04X:%04X\tManufacturer: %s\tProduct: %s", info.VID, info.PID, manufacturer,
+                         product);
+            }
+
+            size_t         desc_len = 0;
+            const uint8_t* desc     = hid_host_get_report_descriptor(hid_device_handle, &desc_len);
+
+            ESP_ERROR_CHECK(decode_descriptor_register_driver(desc, desc_len, dev_params.proto));
+
+            if (ESP_LOG_ENABLED(ESP_LOG_DEBUG)) {
+                print_report_descriptor(desc, desc_len);
+            }
             break;
         default:
             break;

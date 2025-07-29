@@ -22,19 +22,6 @@
 #define USAGE_PAGE_CONSUMER        0x0C
 
 typedef struct {
-    uint16_t usage_page;
-    uint16_t usage_ids[MAX_USAGES];
-    uint8_t  count;
-    uint8_t  size;
-    uint16_t offset;
-    bool     relative;
-} hid_field_info;
-
-typedef struct {
-    hid_field_info fields[MAX_FIELDS];
-    size_t         num_fields;
-} hid_report_descriptor;
-typedef struct {
     uint8_t report_id;
 
     union {
@@ -136,5 +123,13 @@ typedef struct {
 /* When set to 1 pressing ENTER will be extending with LineFeed during serial debug output */
 #define KEYBOARD_ENTER_LF_EXTEND 1
 
+typedef struct {
+    uint8_t report_id;
+    mouse_report_t (*parse)(const uint8_t* data, int length);
+} mouse_driver_t;
+
 esp_err_t badge_hid_init(QueueHandle_t event_queue);
 esp_err_t badge_hid_deinit(void);
+
+void badge_hid_register_mouse_driver(const mouse_driver_t* driver);
+void badge_hid_unregister_mouse_driver(void);
