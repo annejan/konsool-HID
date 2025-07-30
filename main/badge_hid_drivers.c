@@ -135,93 +135,114 @@ static bool analyze_gamepad_layout(const uint8_t* desc, int desc_len, gamepad_fi
     uint16_t usages[32]  = {0};
     int      usage_index = 0;
 
-    // Check for Report ID and adjust initial bit offset
-    for (int pre = 0; pre < desc_len - 1; pre++) {
-        if ((desc[pre] & 0xFC) == 0x84) {
-            bit_offset = 8;
-            break;
-        }
-    }
+    uint8_t report_size  = 0;
+    uint8_t report_count = 0;
+
+    bool last_input_was_button_array = false;
 
     for (int i = 0; i < desc_len;) {
         uint8_t b = desc[i++];
-        if (b == 0xFE || i >= desc_len) break;  // long item or overrun
+        if (b == 0xFE || i >= desc_len) break;
 
         int size = b & 0x03;
+        if (size == 3) size = 4;
         int type = (b >> 2) & 0x03;
         int tag  = (b >> 4) & 0x0F;
-        if (size == 3) size = 4;
         if (i + size > desc_len) break;
 
         uint32_t data = 0;
         for (int j = 0; j < size; j++) {
-            data |= desc[i++] << (j * 8);
+            data |= ((uint32_t)desc[i++]) << (j * 8);
         }
 
         switch (type) {
             case 0x1:  // Global
-                if (tag == 0x0) usage_page = data;
+                switch (tag) {
+                    case 0x0:
+                        usage_page = data;
+                        break;
+                    case 0x7:
+                        report_size = data;
+                        break;
+                    case 0x9:
+                        report_count = data;
+                        break;
+                    case 0x8:
+                        layout_out->has_report_id = true;
+                        bit_offset                = 8;
+                        break;
+                }
                 break;
 
             case 0x2:  // Local
-                if (tag == 0x0 && usage_index < (int)(sizeof(usages) / sizeof(usages[0]))) usages[usage_index++] = data;
+                if (tag == 0x0 && usage_index < 32) {
+                    usages[usage_index++] = data;
+                }
                 break;
 
             case 0x0:              // Main
                 if (tag == 0x8) {  // Input
-                    int field_count = 1;
-                    int field_size  = 0;
+                    if (usage_page == 0x09 && usage_index >= 1 && usages[0] >= 0x01 && usages[0] <= 0x20) {
+                        // Button block
+                        if (!layout_out->has_buttons) layout_out->button_bit_offset = bit_offset;
+                        layout_out->has_buttons      = true;
+                        layout_out->button_bit_count += report_count;
+                        bit_offset                   += report_size * report_count;
+                        last_input_was_button_array  = true;
+                    } else if (usage_page == 0x09 && usage_index == 0 && last_input_was_button_array) {
+                        // Button padding
+                        bit_offset += report_size * report_count;
+                    } else {
+                        // One usage per field (e.g. dpad, sticks, triggers)
+                        for (int u = 0; u < usage_index; u++) {
+                            uint16_t usage = usages[u];
 
-                    // Go backwards to find report count and size
-                    for (int back = i - size - 2; back > 0; back--) {
-                        if ((desc[back] & 0xFC) == 0x94) field_count = desc[back + 1];
-                        if ((desc[back] & 0xFC) == 0x74) field_size = desc[back + 1];
-                        if (field_count && field_size) break;
-                    }
-
-                    for (int u = 0; u < usage_index; u++) {
-                        uint16_t usage = usages[u];
-
-                        if (usage_page == 0x01) {  // Generic Desktop
-                            if (usage == 0x39) {
-                                layout_out->has_dpad        = true;
-                                layout_out->dpad_bit_offset = bit_offset;
-                                layout_out->dpad_bit_size   = field_size;
-                            } else if (usage == 0x30) {
-                                layout_out->has_lx        = true;
-                                layout_out->lx_bit_offset = bit_offset;
-                                layout_out->lx_bit_size   = field_size;
-                            } else if (usage == 0x31) {
-                                layout_out->has_ly        = true;
-                                layout_out->ly_bit_offset = bit_offset;
-                                layout_out->ly_bit_size   = field_size;
-                            } else if (usage == 0x32) {
-                                layout_out->has_rx        = true;
-                                layout_out->rx_bit_offset = bit_offset;
-                                layout_out->rx_bit_size   = field_size;
-                            } else if (usage == 0x35) {
-                                layout_out->has_ry        = true;
-                                layout_out->ry_bit_offset = bit_offset;
-                                layout_out->ry_bit_size   = field_size;
+                            if (usage_page == 0x01) {
+                                switch (usage) {
+                                    case 0x39:
+                                        layout_out->has_dpad        = true;
+                                        layout_out->dpad_bit_offset = bit_offset;
+                                        layout_out->dpad_bit_size   = report_size;
+                                        break;
+                                    case 0x30:
+                                        layout_out->has_lx        = true;
+                                        layout_out->lx_bit_offset = bit_offset;
+                                        layout_out->lx_bit_size   = report_size;
+                                        break;
+                                    case 0x31:
+                                        layout_out->has_ly        = true;
+                                        layout_out->ly_bit_offset = bit_offset;
+                                        layout_out->ly_bit_size   = report_size;
+                                        break;
+                                    case 0x32:
+                                        layout_out->has_rx        = true;
+                                        layout_out->rx_bit_offset = bit_offset;
+                                        layout_out->rx_bit_size   = report_size;
+                                        break;
+                                    case 0x35:
+                                        layout_out->has_ry        = true;
+                                        layout_out->ry_bit_offset = bit_offset;
+                                        layout_out->ry_bit_size   = report_size;
+                                        break;
+                                }
+                            } else if (usage_page == 0x02 && (usage == 0xC4 || usage == 0xC5)) {
+                                if (!layout_out->has_lt) {
+                                    layout_out->has_lt        = true;
+                                    layout_out->lt_bit_offset = bit_offset;
+                                    layout_out->lt_bit_size   = report_size;
+                                } else {
+                                    layout_out->has_rt        = true;
+                                    layout_out->rt_bit_offset = bit_offset;
+                                    layout_out->rt_bit_size   = report_size;
+                                }
                             }
-                        } else if (usage_page == 0x09 && usage >= 0x01 && usage <= 0x20) {  // Buttons
-                            if (!layout_out->has_buttons) layout_out->button_bit_offset = bit_offset;
-                            layout_out->has_buttons      = true;
-                            layout_out->button_bit_count += 1;
-                        } else if (usage_page == 0x02 && (usage == 0xC5 || usage == 0xC4)) {  // Triggers
-                            if (!layout_out->has_lt) {
-                                layout_out->has_lt        = true;
-                                layout_out->lt_bit_offset = bit_offset;
-                                layout_out->lt_bit_size   = field_size;
-                            } else {
-                                layout_out->has_rt        = true;
-                                layout_out->rt_bit_offset = bit_offset;
-                                layout_out->rt_bit_size   = field_size;
-                            }
+
+                            bit_offset += report_size;
                         }
+
+                        last_input_was_button_array = false;
                     }
 
-                    bit_offset  += field_count * field_size;
                     usage_index = 0;
                 }
                 break;
