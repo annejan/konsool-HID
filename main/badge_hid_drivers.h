@@ -73,47 +73,7 @@ typedef struct {
     uint8_t  rt_bit_size;
 } gamepad_field_layout_t;
 
-// Structure to hold parsed HID field information
-typedef struct {
-    const char* name;           ///< Field name (e.g., "button", "axis")
-    uint8_t     report_id;      ///< Report ID associated with this field
-    uint8_t*    data;           ///< Pointer to first byte of value in report data
-    uint16_t    offset;         ///< Bit offset in report (0-n)
-    uint8_t     size;           ///< Size in bits (1-32)
-    uint8_t     count;          ///< Number of items in an array (e.g., 5 buttons)
-    uint16_t    usage_page;     ///< Usage page ID
-    uint16_t    usage_ids[32];  ///< Store up to 32 usages per field
-    uint16_t    usage_id;       ///< Usage ID within the page
-    const char* usage_name;     ///< Human-readable name of the usage
-
-    union {
-        struct {
-            uint8_t data      : 1;  ///< Constant value (1) or variable (0)
-            uint8_t array     : 1;  ///< Array of values (1) or single value (0)
-            uint8_t relative  : 1;  ///< Relative value
-            uint8_t wrap      : 1;  ///< Wraps around (e.g., hat switch)
-            uint8_t nonlinear : 1;  ///< Non-linear mapping
-            uint8_t preferred : 1;  ///< Preferred state
-            uint8_t null      : 1;  ///< No null position
-            uint8_t dummy     : 1;  ///< Unused bit
-        };
-        uint8_t val;
-    } flags;
-
-    struct {
-        int32_t min;
-        int32_t max;
-    } logic_range;
-
-    struct {
-        uint32_t min;
-        uint32_t max;
-    } usage_range;
-} hid_field_info_t;
-
-typedef struct {
-    size_t            num_fields;
-    hid_field_info_t* fields;
-} hid_report_descriptor_t;
+bool analyze_gamepad_layout(const uint8_t* desc, int desc_len, gamepad_field_layout_t* layout_out);
+bool analyze_mouse_layout(const uint8_t* desc, int desc_len, mouse_field_layout_t* layout_out);
 
 esp_err_t decode_descriptor_register_driver(const uint8_t* const desc, const int desc_len, const uint8_t proto);

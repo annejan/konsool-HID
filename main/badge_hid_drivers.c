@@ -9,247 +9,177 @@
  * SPDX-License-Identifier: MIT
  */
 #include "badge_hid_drivers.h"
+#include <stdint.h>
+#include <string.h>
+#include "badge_hid_decoder.h"
+#include "badge_hid_tokenizer.h"
 #include "esp_log.h"
 #include "usb/hid.h"
 
 static char const TAG[] = "BADGE_HID_DRIVER";
 
-static int32_t extract_signed_bits(const uint8_t* data, uint16_t bit_offset, uint8_t bit_size) {
-    uint32_t raw = 0;
-    for (int i = 0; i < ((bit_size + 7) / 8) + 1; ++i) {
-        raw |= data[(bit_offset / 8) + i] << (i * 8);
-    }
-
-    raw           >>= (bit_offset % 8);
-    int32_t value = raw & ((1u << bit_size) - 1);
-
-    // Sign extend
-    if (value & (1u << (bit_size - 1))) {
-        value |= ~((1u << bit_size) - 1);
-    }
-
-    return value;
-}
-
-static bool analyze_mouse_layout(const uint8_t* desc, int desc_len, mouse_field_layout_t* layout_out) {
+bool analyze_mouse_layout(const uint8_t* desc, int desc_len, mouse_field_layout_t* layout_out) {
     memset(layout_out, 0, sizeof(*layout_out));
+    parser_ctx_t ctx = {0};
+    hid_tokenizer_state_t state = {.ptr = desc, .end = desc + desc_len};
+    hid_item_t item;
 
-    uint16_t bit_offset   = 0;
-    uint8_t  usage_page   = 0;
-    uint16_t usages[32]   = {0};
-    int      usage_index  = 0;
-    int      report_size  = 0;
-    int      report_count = 0;
+    while (hid_next_item(&state, &item)) {
+        update_parser_state(&ctx, &item);
 
-    for (int i = 0; i < desc_len;) {
-        uint8_t b = desc[i++];
-        if (b == 0xFE || i >= desc_len) break;
+        if (item.bType == HID_TYPE_MAIN && item.bTag == HID_TAG_INPUT) {
+            ESP_LOGD(TAG, "Input: usage_page=0x%02x, count=%u, size=%u, offset=%u", ctx.usage_page, ctx.report_count, ctx.report_size, ctx.bit_offset);
+            for (uint8_t i = 0; i < ctx.usage_count; i++) {
+                ESP_LOGD(TAG, "  usage[%u] = 0x%04x", i, ctx.usages[i]);
+            }
+            for (uint8_t i = 0; i < ctx.report_count && i < ctx.usage_count; i++) {
+                uint16_t usage = ctx.usages[i];
+                ESP_LOGD(TAG, "Input: usage_page=0x%02x, usage=0x%04x", ctx.usage_page, usage);
 
-        int size = b & 0x03;
-        int type = (b >> 2) & 0x03;
-        int tag  = (b >> 4) & 0x0F;
-        if (size == 3) size = 4;
-        if (i + size > desc_len) break;
-
-        uint32_t data = 0;
-        for (int j = 0; j < size; j++) {
-            data |= desc[i++] << (j * 8);
-        }
-
-        switch (type) {
-            case 0x1:  // Global
-                if (tag == 0x0)
-                    usage_page = data;
-                else if (tag == 0x7)
-                    report_size = data;
-                else if (tag == 0x9)
-                    report_count = data;
-                break;
-
-            case 0x2:  // Local
-                if (tag == 0x0 && usage_index < 32) usages[usage_index++] = data;
-                break;
-
-            case 0x0:              // Main
-                if (tag == 0x8) {  // Input
-                    if (usage_page == 0x01 || usage_page == 0x09 || usage_page == 0x0C) {
-                        int fields = report_count;
-                        int bits   = report_size;
-
-                        int used = usage_index;
-                        if (used > fields) used = fields;
-
-                        for (int u = 0; u < used; u++) {
-                            uint16_t usage = usages[u];
-                            if (usage_page == 0x01) {
-                                if (usage == 0x30) {
-                                    layout_out->has_x        = true;
-                                    layout_out->x_bit_offset = bit_offset;
-                                    layout_out->x_bit_size   = bits;
-                                } else if (usage == 0x31) {
-                                    layout_out->has_y        = true;
-                                    layout_out->y_bit_offset = bit_offset;
-                                    layout_out->y_bit_size   = bits;
-                                } else if (usage == 0x38) {
-                                    layout_out->has_scroll        = true;
-                                    layout_out->scroll_bit_offset = bit_offset;
-                                    layout_out->scroll_bit_size   = bits;
-                                } else if (usage == 0x48) {
-                                    layout_out->has_tilt        = true;
-                                    layout_out->tilt_bit_offset = bit_offset;
-                                    layout_out->tilt_bit_size   = bits;
-                                }
-                            } else if (usage_page == 0x0C && usage == 0x0238) {
-                                layout_out->has_tilt        = true;
-                                layout_out->tilt_bit_offset = bit_offset;
-                                layout_out->tilt_bit_size   = bits;
-                            } else if (usage_page == 0x09 && usage >= 0x01 && usage <= 0x10) {
-                                if (!layout_out->has_buttons) layout_out->button_bit_offset = bit_offset;
-                                layout_out->has_buttons      = true;
-                                layout_out->button_bit_count += 1;
-                            }
-                            bit_offset += bits;
-                        }
-
-                        // Account for unused fields (e.g. Button 3-16 with no Usage tags)
-                        if (fields > used) {
-                            bit_offset += (fields - used) * bits;
-                        }
-
-                        usage_index = 0;
-                        memset(usages, 0, sizeof(usages));
+                if (ctx.usage_page == HID_USAGE_PAGE_BUTTON) {
+                    if (!layout_out->has_buttons) {
+                        layout_out->has_buttons = true;
+                        layout_out->button_bit_offset = ctx.bit_offset;
                     }
+                    layout_out->button_bit_count += ctx.report_size;
+                } else if (ctx.usage_page == HID_USAGE_PAGE_GENERIC_DESKTOP) {
+                    switch (usage) {
+                        case HID_USAGE_X:
+                            layout_out->has_x = true;
+                            layout_out->x_bit_offset = ctx.bit_offset;
+                            layout_out->x_bit_size = ctx.report_size;
+                            break;
+                        case HID_USAGE_Y:
+                            layout_out->has_y = true;
+                            layout_out->y_bit_offset = ctx.bit_offset;
+                            layout_out->y_bit_size = ctx.report_size;
+                            break;
+                        case HID_USAGE_WHEEL:
+                            layout_out->has_scroll = true;
+                            layout_out->scroll_bit_offset = ctx.bit_offset;
+                            layout_out->scroll_bit_size = ctx.report_size;
+                            break;
+                    }
+                } else if (ctx.usage_page == HID_USAGE_PAGE_CONSUMER && usage == HID_USAGE_AC_PAN) {
+                    layout_out->has_tilt = true;
+                    layout_out->tilt_bit_offset = ctx.bit_offset;
+                    layout_out->tilt_bit_size = ctx.report_size;
                 }
-                break;
+                ctx.bit_offset += ctx.report_size;
+            }
+            ctx.usage_count = 0;
         }
     }
 
-    return layout_out->has_x && layout_out->has_y;
+    if (!layout_out->has_buttons) {
+        ESP_LOGW(TAG, "No buttons found");
+    }
+    if (!layout_out->has_x || !layout_out->has_y) {
+        ESP_LOGW(TAG, "Missing X/Y axes");
+    }
+
+    return layout_out->has_buttons && layout_out->has_x && layout_out->has_y;
 }
 
-static bool analyze_gamepad_layout(const uint8_t* desc, int desc_len, gamepad_field_layout_t* layout_out) {
+
+bool analyze_gamepad_layout(const uint8_t* desc, int desc_len, gamepad_field_layout_t* layout_out) {
+    hid_tokenizer_state_t state = {.ptr = desc, .end = desc + desc_len};
+    parser_ctx_t          ctx   = {0};
+    hid_item_t            item;
+
     memset(layout_out, 0, sizeof(*layout_out));
 
-    uint16_t bit_offset  = 0;
-    uint8_t  usage_page  = 0;
-    uint16_t usages[32]  = {0};
-    int      usage_index = 0;
-
-    uint8_t report_size  = 0;
-    uint8_t report_count = 0;
-
-    bool last_input_was_button_array = false;
-
-    for (int i = 0; i < desc_len;) {
-        uint8_t b = desc[i++];
-        if (b == 0xFE || i >= desc_len) break;
-
-        int size = b & 0x03;
-        if (size == 3) size = 4;
-        int type = (b >> 2) & 0x03;
-        int tag  = (b >> 4) & 0x0F;
-        if (i + size > desc_len) break;
-
-        uint32_t data = 0;
-        for (int j = 0; j < size; j++) {
-            data |= ((uint32_t)desc[i++]) << (j * 8);
-        }
-
-        switch (type) {
-            case 0x1:  // Global
-                switch (tag) {
-                    case 0x0:
-                        usage_page = data;
+    while (hid_next_item(&state, &item)) {
+        switch (item.bType) {
+            case HID_TYPE_GLOBAL:
+                switch (item.bTag) {
+                    case HID_GLOBAL_USAGE_PAGE:
+                        ctx.usage_page = item.data;
                         break;
-                    case 0x7:
-                        report_size = data;
+                    case HID_GLOBAL_REPORT_SIZE:
+                        ctx.report_size = item.data;
                         break;
-                    case 0x9:
-                        report_count = data;
+                    case HID_GLOBAL_REPORT_COUNT:
+                        ctx.report_count = item.data;
                         break;
-                    case 0x8:
+                    case HID_GLOBAL_REPORT_ID:
                         layout_out->has_report_id = true;
-                        bit_offset                = 8;
+                        ctx.bit_offset            = 8;  // reserve first byte
                         break;
                 }
                 break;
 
-            case 0x2:  // Local
-                if (tag == 0x0 && usage_index < 32) {
-                    usages[usage_index++] = data;
+            case HID_TYPE_LOCAL:
+                if (item.bTag == HID_LOCAL_USAGE && ctx.usage_count < 32) {
+                    ctx.usages[ctx.usage_count++] = item.data;
                 }
                 break;
 
-            case 0x0:              // Main
-                if (tag == 0x8) {  // Input
-                    if (usage_page == 0x09 && usage_index >= 1 && usages[0] >= 0x01 && usages[0] <= 0x20) {
-                        // Button block
-                        if (!layout_out->has_buttons) layout_out->button_bit_offset = bit_offset;
-                        layout_out->has_buttons      = true;
-                        layout_out->button_bit_count += report_count;
-                        bit_offset                   += report_size * report_count;
-                        last_input_was_button_array  = true;
-                    } else if (usage_page == 0x09 && usage_index == 0 && last_input_was_button_array) {
-                        // Button padding
-                        bit_offset += report_size * report_count;
-                    } else {
-                        // One usage per field (e.g. dpad, sticks, triggers)
-                        for (int u = 0; u < usage_index; u++) {
-                            uint16_t usage = usages[u];
-
-                            if (usage_page == 0x01) {
-                                switch (usage) {
-                                    case 0x39:
-                                        layout_out->has_dpad        = true;
-                                        layout_out->dpad_bit_offset = bit_offset;
-                                        layout_out->dpad_bit_size   = report_size;
-                                        break;
-                                    case 0x30:
-                                        layout_out->has_lx        = true;
-                                        layout_out->lx_bit_offset = bit_offset;
-                                        layout_out->lx_bit_size   = report_size;
-                                        break;
-                                    case 0x31:
-                                        layout_out->has_ly        = true;
-                                        layout_out->ly_bit_offset = bit_offset;
-                                        layout_out->ly_bit_size   = report_size;
-                                        break;
-                                    case 0x32:
-                                        layout_out->has_rx        = true;
-                                        layout_out->rx_bit_offset = bit_offset;
-                                        layout_out->rx_bit_size   = report_size;
-                                        break;
-                                    case 0x35:
-                                        layout_out->has_ry        = true;
-                                        layout_out->ry_bit_offset = bit_offset;
-                                        layout_out->ry_bit_size   = report_size;
-                                        break;
-                                }
-                            } else if (usage_page == 0x02 && (usage == 0xC4 || usage == 0xC5)) {
-                                if (!layout_out->has_lt) {
-                                    layout_out->has_lt        = true;
-                                    layout_out->lt_bit_offset = bit_offset;
-                                    layout_out->lt_bit_size   = report_size;
-                                } else {
-                                    layout_out->has_rt        = true;
-                                    layout_out->rt_bit_offset = bit_offset;
-                                    layout_out->rt_bit_size   = report_size;
-                                }
-                            }
-
-                            bit_offset += report_size;
+            case HID_TYPE_MAIN:
+                if (item.bTag == HID_MAIN_INPUT) {
+                    if (ctx.usage_page == 0x09) {  // Button page
+                        if (!layout_out->has_buttons) {
+                            layout_out->has_buttons       = true;
+                            layout_out->button_bit_offset = ctx.bit_offset;
                         }
+                        layout_out->button_bit_count += ctx.report_count;
+                    } else {
+                        for (int i = 0; i < ctx.usage_count; i++) {
+                            uint8_t usage = ctx.usages[i];
+                            switch (ctx.usage_page) {
+                                case 0x01:  // Generic Desktop Controls
+                                    switch (usage) {
+                                        case 0x39:
+                                            layout_out->has_dpad        = true;
+                                            layout_out->dpad_bit_offset = ctx.bit_offset;
+                                            layout_out->dpad_bit_size   = ctx.report_size;
+                                            break;
+                                        case 0x30:  // LX
+                                            layout_out->has_lx        = true;
+                                            layout_out->lx_bit_offset = ctx.bit_offset;
+                                            layout_out->lx_bit_size   = ctx.report_size;
+                                            break;
+                                        case 0x31:  // LY
+                                            layout_out->has_ly        = true;
+                                            layout_out->ly_bit_offset = ctx.bit_offset;
+                                            layout_out->ly_bit_size   = ctx.report_size;
+                                            break;
+                                        case 0x32:  // RX
+                                            layout_out->has_rx        = true;
+                                            layout_out->rx_bit_offset = ctx.bit_offset;
+                                            layout_out->rx_bit_size   = ctx.report_size;
+                                            break;
+                                        case 0x35:  // RY
+                                            layout_out->has_ry        = true;
+                                            layout_out->ry_bit_offset = ctx.bit_offset;
+                                            layout_out->ry_bit_size   = ctx.report_size;
+                                            break;
+                                    }
+                                    break;
 
-                        last_input_was_button_array = false;
+                                case 0x02:  // Simulation Controls (triggers)
+                                    if (usage == 0xC5) {
+                                        layout_out->has_lt        = true;
+                                        layout_out->lt_bit_offset = ctx.bit_offset;
+                                        layout_out->lt_bit_size   = ctx.report_size;
+                                    } else if (usage == 0xC4) {
+                                        layout_out->has_rt        = true;
+                                        layout_out->rt_bit_offset = ctx.bit_offset;
+                                        layout_out->rt_bit_size   = ctx.report_size;
+                                    }
+                                    break;
+                            }
+                        }
                     }
 
-                    usage_index = 0;
+                    ctx.bit_offset  += ctx.report_size * ctx.report_count;
+                    ctx.usage_count = 0;  // clear usage stack after each INPUT
                 }
                 break;
         }
     }
 
-    return layout_out->has_dpad && layout_out->has_buttons;
+    return layout_out->has_dpad || layout_out->has_buttons || layout_out->has_lx;
 }
 
 esp_err_t decode_descriptor_register_driver(const uint8_t* const desc, const int desc_len, const uint8_t proto) {
@@ -280,7 +210,7 @@ esp_err_t decode_descriptor_register_driver(const uint8_t* const desc, const int
             ESP_LOGW(TAG, "Could not parse mouse layout");
         }
     } else {
-        ESP_LOGI(TAG, "Gamepad driver analyusing");
+        ESP_LOGI(TAG, "Gamepad driver analysing");
         ESP_LOG_BUFFER_HEX(TAG, desc, desc_len);
 
         gamepad_field_layout_t layout;

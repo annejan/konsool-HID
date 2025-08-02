@@ -1,6 +1,7 @@
 idf_component_register(
 	SRCS
 		"badge_hid_host.c"
+		"badge_hid_tokenizer.c"
 		"badge_hid_drivers.c"
 		"main.c"
 	PRIV_REQUIRES
