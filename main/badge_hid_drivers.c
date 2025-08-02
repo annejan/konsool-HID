@@ -9,6 +9,7 @@
  * SPDX-License-Identifier: MIT
  */
 #include "badge_hid_drivers.h"
+#include <string.h>
 #include "esp_log.h"
 #include "usb/hid.h"
 
@@ -31,7 +32,7 @@ static int32_t extract_signed_bits(const uint8_t* data, uint16_t bit_offset, uin
     return value;
 }
 
-static bool analyze_mouse_layout(const uint8_t* desc, int desc_len, mouse_field_layout_t* layout_out) {
+esp_err_t analyze_mouse_layout(const uint8_t* desc, int desc_len, mouse_field_layout_t* layout_out) {
     memset(layout_out, 0, sizeof(*layout_out));
 
     uint16_t bit_offset   = 0;
@@ -40,10 +41,12 @@ static bool analyze_mouse_layout(const uint8_t* desc, int desc_len, mouse_field_
     int      usage_index  = 0;
     int      report_size  = 0;
     int      report_count = 0;
+    uint16_t usage_min    = 0;
+    uint16_t usage_max    = 0;
 
     for (int i = 0; i < desc_len;) {
         uint8_t b = desc[i++];
-        if (b == 0xFE || i >= desc_len) break;
+        if (b == HID_LONG_ITEM_PREFIX || i >= desc_len) break;
 
         int size = b & 0x03;
         int type = (b >> 2) & 0x03;
@@ -57,21 +60,25 @@ static bool analyze_mouse_layout(const uint8_t* desc, int desc_len, mouse_field_
         }
 
         switch (type) {
-            case 0x1:  // Global
-                if (tag == 0x0)
+            case HID_TYPE_GLOBAL:
+                if (tag == HID_TAG_USAGE_PAGE)
                     usage_page = data;
-                else if (tag == 0x7)
+                else if (tag == HID_TAG_REPORT_SIZE)
                     report_size = data;
-                else if (tag == 0x9)
+                else if (tag == HID_TAG_REPORT_COUNT)
                     report_count = data;
                 break;
 
-            case 0x2:  // Local
-                if (tag == 0x0 && usage_index < 32) usages[usage_index++] = data;
+            case HID_TYPE_LOCAL:
+                if (tag == HID_TAG_USAGE && usage_index < 32) usages[usage_index++] = data;
+                else if (tag == HID_TAG_USAGE_MIN)
+                    usage_min = data;
+                else if (tag == HID_TAG_USAGE_MAX)
+                    usage_max = data;
                 break;
 
-            case 0x0:              // Main
-                if (tag == 0x8) {  // Input
+            case HID_TYPE_MAIN:
+                if (tag == HID_TAG_INPUT) {
                     if (usage_page == 0x01 || usage_page == 0x09 || usage_page == 0x0C) {
                         int fields = report_count;
                         int bits   = report_size;
@@ -81,41 +88,52 @@ static bool analyze_mouse_layout(const uint8_t* desc, int desc_len, mouse_field_
 
                         for (int u = 0; u < used; u++) {
                             uint16_t usage = usages[u];
-                            if (usage_page == 0x01) {
-                                if (usage == 0x30) {
+                            if (usage_page == USAGE_PAGE_GENERIC_DESKTOP) {
+                                if (usage == USAGE_X) {
                                     layout_out->has_x        = true;
                                     layout_out->x_bit_offset = bit_offset;
                                     layout_out->x_bit_size   = bits;
-                                } else if (usage == 0x31) {
+                                } else if (usage == USAGE_Y) {
                                     layout_out->has_y        = true;
                                     layout_out->y_bit_offset = bit_offset;
                                     layout_out->y_bit_size   = bits;
-                                } else if (usage == 0x38) {
+                                } else if (usage == USAGE_WHEEL) {
                                     layout_out->has_scroll        = true;
                                     layout_out->scroll_bit_offset = bit_offset;
                                     layout_out->scroll_bit_size   = bits;
-                                } else if (usage == 0x48) {
+                                } else if (usage == USAGE_TILT) {
                                     layout_out->has_tilt        = true;
                                     layout_out->tilt_bit_offset = bit_offset;
                                     layout_out->tilt_bit_size   = bits;
                                 }
-                            } else if (usage_page == 0x0C && usage == 0x0238) {
+                            } else if (usage_page == USAGE_PAGE_CONSUMER && usage == USAGE_CONSUMER_TILT) {
                                 layout_out->has_tilt        = true;
                                 layout_out->tilt_bit_offset = bit_offset;
                                 layout_out->tilt_bit_size   = bits;
-                            } else if (usage_page == 0x09 && usage >= 0x01 && usage <= 0x10) {
-                                if (!layout_out->has_buttons) layout_out->button_bit_offset = bit_offset;
-                                layout_out->has_buttons      = true;
-                                layout_out->button_bit_count += 1;
+                            } else if (usage_page == USAGE_PAGE_BUTTON) {
+                                if (!layout_out->has_buttons)
+                                    layout_out->button_bit_offset = bit_offset;
+
+                                layout_out->has_buttons = true;
                             }
                             bit_offset += bits;
                         }
 
-                        // Account for unused fields (e.g. Button 3-16 with no Usage tags)
+                        // Handle usage ranges (Usage Min/Max) for buttons
+                        if (usage_page == USAGE_PAGE_BUTTON) {
+                            if (!layout_out->has_buttons)
+                                layout_out->button_bit_offset = bit_offset;
+                            
+                            layout_out->has_buttons = true;
+                            if (usage_max) {
+                                layout_out->button_bit_count = usage_max;
+                            }
+                        } 
+
                         if (fields > used) {
                             bit_offset += (fields - used) * bits;
                         }
-
+                    
                         usage_index = 0;
                         memset(usages, 0, sizeof(usages));
                     }
@@ -127,7 +145,7 @@ static bool analyze_mouse_layout(const uint8_t* desc, int desc_len, mouse_field_
     return layout_out->has_x && layout_out->has_y;
 }
 
-static bool analyze_gamepad_layout(const uint8_t* desc, int desc_len, gamepad_field_layout_t* layout_out) {
+esp_err_t analyze_gamepad_layout(const uint8_t* desc, int desc_len, gamepad_field_layout_t* layout_out) {
     memset(layout_out, 0, sizeof(*layout_out));
 
     uint16_t bit_offset  = 0;
@@ -168,8 +186,8 @@ static bool analyze_gamepad_layout(const uint8_t* desc, int desc_len, gamepad_fi
                         report_count = data;
                         break;
                     case 0x8:
-                        layout_out->has_report_id = true;
-                        bit_offset                = 8;
+                        layout_out->report_id = data;
+                        bit_offset            = 8;
                         break;
                 }
                 break;
