@@ -10,6 +10,7 @@
  */
 #include "badge_hid_drivers.h"
 #include <string.h>
+#include "esp_err.h"
 #include "esp_log.h"
 #include "usb/hid.h"
 
@@ -141,7 +142,7 @@ esp_err_t analyze_mouse_layout(const uint8_t* desc, int desc_len, mouse_field_la
         }
     }
 
-    return layout_out->has_x && layout_out->has_y;
+    return layout_out->has_x && layout_out->has_y ? ESP_OK : ESP_FAIL;
 }
 
 esp_err_t analyze_gamepad_layout(const uint8_t* desc, int desc_len, gamepad_field_layout_t* layout_out) {
@@ -172,6 +173,11 @@ esp_err_t analyze_gamepad_layout(const uint8_t* desc, int desc_len, gamepad_fiel
             data |= ((uint32_t)desc[i++]) << (j * 8);
         }
 
+        // Reset usage list when starting new section
+        if (type == HID_TYPE_GLOBAL && (tag == HID_TAG_USAGE_PAGE || tag == HID_TAG_REPORT_ID)) {
+            usage_index = 0;
+        }
+
         switch (type) {
             case HID_TYPE_GLOBAL:
                 switch (tag) {
@@ -191,7 +197,7 @@ esp_err_t analyze_gamepad_layout(const uint8_t* desc, int desc_len, gamepad_fiel
                 }
                 break;
 
-            case HID_TYPE_LOCAL: 
+            case HID_TYPE_LOCAL:
                 if (tag == HID_TAG_USAGE && usage_index < 32) {
                     usages[usage_index++] = data;
                 }
@@ -199,17 +205,25 @@ esp_err_t analyze_gamepad_layout(const uint8_t* desc, int desc_len, gamepad_fiel
 
             case HID_TYPE_MAIN:
                 if (tag == HID_TAG_INPUT) {
-                    if (usage_page == USAGE_PAGE_BUTTON && usage_index >= 1 && usages[0] >= USAGE_BUTTON_MIN && usages[0] <= USAGE_BUTTON_MAX) {
+                    bool is_constant = (data & 0x01) != 0;
+
+                    if (usage_page == USAGE_PAGE_BUTTON && usage_index >= 1 &&
+                        usages[0] >= USAGE_BUTTON_MIN && usages[0] <= USAGE_BUTTON_MAX) {
                         if (!layout_out->has_buttons) layout_out->button_bit_offset = bit_offset;
-                        layout_out->has_buttons      = true;
+                        layout_out->has_buttons     = true;
                         layout_out->button_bit_count += report_count;
-                        bit_offset                   += report_size * report_count;
-                        last_input_was_button_array  = true;
+                        last_input_was_button_array = true;
+                        bit_offset += report_size * report_count;
                     } else if (usage_page == USAGE_PAGE_BUTTON && usage_index == 0 && last_input_was_button_array) {
                         bit_offset += report_size * report_count;
                     } else {
-                        for (int u = 0; u < usage_index; u++) {
-                            uint16_t usage = usages[u];
+                        for (int u = 0; u < report_count; u++) {
+                            uint16_t usage = (u < usage_index) ? usages[u] :
+                                             (usage_index > 0 ? usages[usage_index - 1] : 0xFFFF);
+                            if (usage == 0xFFFF) {
+                                bit_offset += report_size;
+                                continue;
+                            }
 
                             if (usage_page == USAGE_PAGE_GENERIC_DESKTOP) {
                                 switch (usage) {
@@ -239,7 +253,8 @@ esp_err_t analyze_gamepad_layout(const uint8_t* desc, int desc_len, gamepad_fiel
                                         layout_out->ry_bit_size   = report_size;
                                         break;
                                 }
-                            } else if (usage_page == USAGE_PAGE_SIMULATION && (usage == USAGE_ACCELERATOR || usage == USAGE_BRAKE)) {
+                            } else if (usage_page == USAGE_PAGE_SIMULATION &&
+                                      (usage == USAGE_ACCELERATOR || usage == USAGE_BRAKE)) {
                                 if (!layout_out->has_lt) {
                                     layout_out->has_lt        = true;
                                     layout_out->lt_bit_offset = bit_offset;
@@ -253,21 +268,24 @@ esp_err_t analyze_gamepad_layout(const uint8_t* desc, int desc_len, gamepad_fiel
 
                             bit_offset += report_size;
                         }
-                        // Handle excess usages vs report count
-                        if (usage_index == 0 || usage_index < report_count) {
-                            bit_offset += report_size * (report_count - usage_index);
-                        }
+
                         last_input_was_button_array = false;
                     }
 
-                    usage_index = 0;
+                    // Clear usages after each input block
                 }
+                                    usage_index = 0;
+
                 break;
         }
     }
 
-    return layout_out->has_dpad && layout_out->has_buttons;
+    return ESP_OK;
 }
+
+
+
+
 
 esp_err_t decode_descriptor_register_driver(const uint8_t* const desc, const int desc_len, const uint8_t proto) {
     if (HID_PROTOCOL_KEYBOARD == proto) {

@@ -56,7 +56,7 @@ void print_layout(gamepad_field_layout_t* layout) {
 
 int main(void) {
     mouse_field_layout_t mouse_layout = {0};
-    assert(analyze_mouse_layout(mouse1_desc, mouse1_len, &mouse_layout));
+    assert(ESP_OK == analyze_mouse_layout(mouse1_desc, mouse1_len, &mouse_layout));
     
     assert(mouse_layout.has_buttons);
     assert(mouse_layout.has_x);
@@ -81,7 +81,7 @@ int main(void) {
 
     printf("Logitech M705 passed\n");
 
-    assert(analyze_mouse_layout(mouse2_desc, mouse2_len, &mouse_layout));
+    assert(ESP_OK == analyze_mouse_layout(mouse2_desc, mouse2_len, &mouse_layout));
 
     assert(mouse_layout.has_buttons);
     assert(mouse_layout.has_x);
@@ -103,7 +103,7 @@ int main(void) {
 
     printf("Trust Kuza passed\n");
 
-    assert(analyze_mouse_layout(mouse3_desc, mouse3_len, &mouse_layout));
+    assert(ESP_OK == analyze_mouse_layout(mouse3_desc, mouse3_len, &mouse_layout));
 
     assert(mouse_layout.has_buttons);
     assert(mouse_layout.has_x);
@@ -126,7 +126,7 @@ int main(void) {
     printf("Fujitsu M520 passed\n");
 
     gamepad_field_layout_t pad_layout = {0};
-    assert(analyze_gamepad_layout(gamepad1_desc, gamepad1_len, &pad_layout));
+    assert(ESP_OK == analyze_gamepad_layout(gamepad1_desc, gamepad1_len, &pad_layout));
     print_layout(&pad_layout);
 
     assert(pad_layout.has_dpad);
@@ -138,28 +138,28 @@ int main(void) {
     assert(pad_layout.has_lt);
     assert(pad_layout.has_rt);
 
-    assert(20 == pad_layout.dpad_bit_offset);
+    assert(8 == pad_layout.dpad_bit_offset);
     assert(4  == pad_layout.dpad_bit_size);
 
-    assert(24 == pad_layout.button_bit_offset);
+    assert(16 == pad_layout.button_bit_offset);
     assert(15 == pad_layout.button_bit_count);
 
-    assert(40 == pad_layout.lx_bit_offset);
+    assert(32 == pad_layout.lx_bit_offset);
     assert(8  == pad_layout.lx_bit_size);
 
-    assert(48 == pad_layout.ly_bit_offset);
+    assert(40 == pad_layout.ly_bit_offset);
     assert(8  == pad_layout.ly_bit_size);
 
-    assert(64 == pad_layout.rx_bit_offset);
+    assert(48 == pad_layout.rx_bit_offset);
     assert(8  == pad_layout.rx_bit_size);
 
-    assert(72 == pad_layout.ry_bit_offset);
+    assert(56 == pad_layout.ry_bit_offset);
     assert(8  == pad_layout.ry_bit_size);
 
-    assert(88 == pad_layout.lt_bit_offset);
+    assert(64 == pad_layout.lt_bit_offset);
     assert(8  == pad_layout.lt_bit_size);
 
-    assert(96 == pad_layout.rt_bit_offset);
+    assert(72 == pad_layout.rt_bit_offset);
     assert(8  == pad_layout.rt_bit_size);
 
     printf("Stadia controller passed\n");

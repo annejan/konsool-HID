@@ -127,37 +127,38 @@ typedef struct {
 } mouse_field_layout_t;
 
 typedef struct {
+    bool     has_dpad;
+    bool     has_buttons;
+    bool     has_lx;
+    bool     has_ly;
+    bool     has_rx;
+    bool     has_ry;
+    bool     has_lt;
+    bool     has_rt;
+
     uint8_t report_id;
 
-    bool     has_dpad;
     uint16_t dpad_bit_offset;
     uint8_t  dpad_bit_size;
 
-    bool     has_buttons;
     uint16_t button_bit_offset;
     uint8_t  button_bit_count;
 
-    bool     has_lx;
     uint16_t lx_bit_offset;
     uint8_t  lx_bit_size;
 
-    bool     has_ly;
     uint16_t ly_bit_offset;
     uint8_t  ly_bit_size;
 
-    bool     has_rx;
     uint16_t rx_bit_offset;
     uint8_t  rx_bit_size;
 
-    bool     has_ry;
     uint16_t ry_bit_offset;
     uint8_t  ry_bit_size;
 
-    bool     has_lt;
     uint16_t lt_bit_offset;
     uint8_t  lt_bit_size;
 
-    bool     has_rt;
     uint16_t rt_bit_offset;
     uint8_t  rt_bit_size;
 } gamepad_field_layout_t;
