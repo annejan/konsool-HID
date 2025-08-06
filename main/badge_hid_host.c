@@ -623,11 +623,11 @@ static void hid_host_device_event(hid_host_device_handle_t hid_device_handle, co
             ESP_ERROR_CHECK(hid_host_device_open(hid_device_handle, &dev_config));
 
             if (HID_SUBCLASS_BOOT_INTERFACE == dev_params.sub_class) {
-                ESP_ERROR_CHECK(hid_class_request_set_protocol(hid_device_handle, HID_REPORT_PROTOCOL_BOOT));
                 if (HID_PROTOCOL_KEYBOARD == dev_params.proto) {
+                    ESP_ERROR_CHECK(hid_class_request_set_protocol(hid_device_handle, HID_REPORT_PROTOCOL_BOOT));
                     ESP_ERROR_CHECK(hid_class_request_set_idle(hid_device_handle, 0, 0));
                 } else if (HID_PROTOCOL_MOUSE == dev_params.proto) {  // Luxury mouse support
-                    hid_class_request_set_protocol(hid_device_handle, HID_REPORT_PROTOCOL_REPORT);
+                    ESP_ERROR_CHECK(hid_class_request_set_protocol(hid_device_handle, HID_REPORT_PROTOCOL_REPORT));
                 }
             }
             ESP_ERROR_CHECK(hid_host_device_start(hid_device_handle));

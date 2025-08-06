@@ -18,8 +18,8 @@
 #define HID_TYPE_LOCAL  0x2
 
 // HID Main Item Tags
-#define HID_TAG_INPUT         0x8
-#define HID_TAG_COLLECTION    0xA
+#define HID_TAG_INPUT          0x8
+#define HID_TAG_COLLECTION     0xA
 #define HID_TAG_END_COLLECTION 0xC
 
 // HID Global Item Tags
@@ -29,23 +29,23 @@
 #define HID_TAG_REPORT_ID    0x8
 
 // HID Local Item Tags
-#define HID_TAG_USAGE        0x0
-#define HID_TAG_USAGE_MIN    0x1
-#define HID_TAG_USAGE_MAX    0x2
+#define HID_TAG_USAGE     0x0
+#define HID_TAG_USAGE_MIN 0x1
+#define HID_TAG_USAGE_MAX 0x2
 
 // HID Special Item
 #define HID_LONG_ITEM_PREFIX 0xFE
 
 // Usage Pages
-#define USAGE_PAGE_GENERIC_DESKTOP  0x01
-#define USAGE_PAGE_BUTTON           0x09
-#define USAGE_PAGE_CONSUMER         0x0C
+#define USAGE_PAGE_GENERIC_DESKTOP 0x01
+#define USAGE_PAGE_BUTTON          0x09
+#define USAGE_PAGE_CONSUMER        0x0C
 
 // Usages
-#define USAGE_X           0x30
-#define USAGE_Y           0x31
-#define USAGE_WHEEL       0x38
-#define USAGE_TILT        0x48
+#define USAGE_X             0x30
+#define USAGE_Y             0x31
+#define USAGE_WHEEL         0x38
+#define USAGE_TILT          0x48
 #define USAGE_CONSUMER_TILT 0x0238
 
 // HID Item Types
@@ -54,8 +54,8 @@
 #define HID_TYPE_LOCAL  0x2
 
 // HID Main Item Tags
-#define HID_TAG_INPUT         0x8
-#define HID_TAG_COLLECTION    0xA
+#define HID_TAG_INPUT          0x8
+#define HID_TAG_COLLECTION     0xA
 #define HID_TAG_END_COLLECTION 0xC
 
 // HID Global Item Tags
@@ -65,29 +65,29 @@
 #define HID_TAG_REPORT_ID    0x8
 
 // HID Local Item Tags
-#define HID_TAG_USAGE        0x0
-#define HID_TAG_USAGE_MIN    0x1
-#define HID_TAG_USAGE_MAX    0x2
+#define HID_TAG_USAGE     0x0
+#define HID_TAG_USAGE_MIN 0x1
+#define HID_TAG_USAGE_MAX 0x2
 
 // HID Special Item
 #define HID_LONG_ITEM_PREFIX 0xFE
 
 // Usage Pages
-#define USAGE_PAGE_GENERIC_DESKTOP  0x01
-#define USAGE_PAGE_SIMULATION       0x02
-#define USAGE_PAGE_BUTTON           0x09
-#define USAGE_PAGE_CONSUMER         0x0C
+#define USAGE_PAGE_GENERIC_DESKTOP 0x01
+#define USAGE_PAGE_SIMULATION      0x02
+#define USAGE_PAGE_BUTTON          0x09
+#define USAGE_PAGE_CONSUMER        0x0C
 
 // Generic Desktop Usages
-#define USAGE_X           0x30
-#define USAGE_Y           0x31
-#define USAGE_Z           0x32
-#define USAGE_RX          0x33
-#define USAGE_RY          0x34
-#define USAGE_RZ          0x35
-#define USAGE_HATSWITCH   0x39
-#define USAGE_WHEEL       0x38
-#define USAGE_TILT        0x48
+#define USAGE_X         0x30
+#define USAGE_Y         0x31
+#define USAGE_Z         0x32
+#define USAGE_RX        0x33
+#define USAGE_RY        0x34
+#define USAGE_RZ        0x35
+#define USAGE_HATSWITCH 0x39
+#define USAGE_WHEEL     0x38
+#define USAGE_TILT      0x48
 
 // Simulation Control Usages
 #define USAGE_ACCELERATOR 0xC4
@@ -97,114 +97,35 @@
 #define USAGE_CONSUMER_TILT 0x0238
 
 // Button Usage Range
-#define USAGE_BUTTON_MIN  0x01
-#define USAGE_BUTTON_MAX  0x20
-
-
-typedef struct {
-    bool has_buttons;
-    bool has_x;
-    bool has_y;
-    bool has_scroll;
-    bool has_tilt;
-
-    uint8_t report_id;
-
-    uint16_t button_bit_offset;
-    uint8_t  button_bit_count;
-
-    uint16_t x_bit_offset;
-    uint8_t  x_bit_size;
-
-    uint16_t y_bit_offset;
-    uint8_t  y_bit_size;
-
-    uint16_t scroll_bit_offset;
-    uint8_t  scroll_bit_size;
-
-    uint16_t tilt_bit_offset;
-    uint8_t  tilt_bit_size;
-} mouse_field_layout_t;
+#define USAGE_BUTTON_MIN 0x01
+#define USAGE_BUTTON_MAX 0x20
 
 typedef struct {
-    bool     has_dpad;
-    bool     has_buttons;
-    bool     has_lx;
-    bool     has_ly;
-    bool     has_rx;
-    bool     has_ry;
-    bool     has_lt;
-    bool     has_rt;
+    bool     present;
+    uint16_t offset;
+    uint8_t  size;
+} field_info_t;
 
-    uint8_t report_id;
-
-    uint16_t dpad_bit_offset;
-    uint8_t  dpad_bit_size;
-
-    uint16_t button_bit_offset;
-    uint8_t  button_bit_count;
-
-    uint16_t lx_bit_offset;
-    uint8_t  lx_bit_size;
-
-    uint16_t ly_bit_offset;
-    uint8_t  ly_bit_size;
-
-    uint16_t rx_bit_offset;
-    uint8_t  rx_bit_size;
-
-    uint16_t ry_bit_offset;
-    uint8_t  ry_bit_size;
-
-    uint16_t lt_bit_offset;
-    uint8_t  lt_bit_size;
-
-    uint16_t rt_bit_offset;
-    uint8_t  rt_bit_size;
+typedef struct {
+    uint8_t      report_id;
+    field_info_t dpad;
+    field_info_t buttons;
+    field_info_t lx, ly;
+    field_info_t rx, ry;
+    field_info_t lt, rt;
 } gamepad_field_layout_t;
 
-// Structure to hold parsed HID field information
-typedef struct {
-    const char* name;           ///< Field name (e.g., "button", "axis")
-    uint8_t     report_id;      ///< Report ID associated with this field
-    uint8_t*    data;           ///< Pointer to first byte of value in report data
-    uint16_t    offset;         ///< Bit offset in report (0-n)
-    uint8_t     size;           ///< Size in bits (1-32)
-    uint8_t     count;          ///< Number of items in an array (e.g., 5 buttons)
-    uint16_t    usage_page;     ///< Usage page ID
-    uint16_t    usage_ids[32];  ///< Store up to 32 usages per field
-    uint16_t    usage_id;       ///< Usage ID within the page
-    const char* usage_name;     ///< Human-readable name of the usage
-
-    union {
-        struct {
-            uint8_t data      : 1;  ///< Constant value (1) or variable (0)
-            uint8_t array     : 1;  ///< Array of values (1) or single value (0)
-            uint8_t relative  : 1;  ///< Relative value
-            uint8_t wrap      : 1;  ///< Wraps around (e.g., hat switch)
-            uint8_t nonlinear : 1;  ///< Non-linear mapping
-            uint8_t preferred : 1;  ///< Preferred state
-            uint8_t null      : 1;  ///< No null position
-            uint8_t dummy     : 1;  ///< Unused bit
-        };
-        uint8_t val;
-    } flags;
-
-    struct {
-        int32_t min;
-        int32_t max;
-    } logic_range;
-
-    struct {
-        uint32_t min;
-        uint32_t max;
-    } usage_range;
-} hid_field_info_t;
+// Mouse layout: X, Y, Wheel, Buttons up to 8
+// Buttons are bit-packed after axes
 
 typedef struct {
-    size_t            num_fields;
-    hid_field_info_t* fields;
-} hid_report_descriptor_t;
+    uint8_t      report_id;
+    field_info_t x;
+    field_info_t y;
+    field_info_t scroll;
+    field_info_t tilt;
+    field_info_t buttons;  // count via size: number of bits
+} mouse_field_layout_t;
 
 esp_err_t analyze_mouse_layout(const uint8_t* desc, int desc_len, mouse_field_layout_t* layout_out);
 esp_err_t analyze_gamepad_layout(const uint8_t* desc, int desc_len, gamepad_field_layout_t* layout_out);
