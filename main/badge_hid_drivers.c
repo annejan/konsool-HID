@@ -352,7 +352,7 @@ gamepad_report_t handle_gamepad_event(const uint8_t* data, const int length) {
 
 gamepad_report_t parse_gamepad_report(const uint8_t* data, int length, gamepad_field_layout_t* layout) {
 
-    ESP_LOG_BUFFER_HEX(TAG, data, length);
+    // ESP_LOG_BUFFER_HEX(TAG, data, length);
 
     gamepad_report_t report = {0};
     if (!layout) {
