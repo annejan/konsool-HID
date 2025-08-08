@@ -290,10 +290,10 @@ int test_layouts(void) {
     assert(1 == pad_report.buttons.r4);
 
     ESP_LOGI(TAG, "Stadia controller reports passed");
-
     return 0;
 }
 
 int main(void) {
     assert(0 == test_layouts());
+    return 0;
 }
