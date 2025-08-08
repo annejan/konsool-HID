@@ -298,6 +298,65 @@ int test_layouts(void) {
     assert(1 == pad_report.buttons.r4);
 
     ESP_LOGI(TAG, "Stadia controller reports passed");
+
+    assert(ESP_OK == analyze_gamepad_layout(gamepad2_desc, gamepad2_len, &pad_layout));
+
+    assert(44 == pad_layout.report_len_bits);
+
+    assert(pad_layout.dpad.present);
+    assert(pad_layout.buttons.present);
+    assert(pad_layout.lx.present);
+    assert(pad_layout.ly.present);
+    assert(pad_layout.rx.present);
+    assert(pad_layout.ry.present);
+
+    assert(40 == pad_layout.dpad.offset);
+    assert(4 == pad_layout.dpad.size);
+
+    assert(8 == pad_layout.lx.offset);
+    assert(8 == pad_layout.lx.size);
+    assert(16 == pad_layout.ly.offset);
+    assert(8 == pad_layout.ly.size);
+
+    assert(24 == pad_layout.rx.offset);
+    assert(8 == pad_layout.rx.size);
+    assert(32 == pad_layout.ry.offset);
+    assert(8 == pad_layout.ry.size);
+
+    assert(44 == pad_layout.buttons.offset);
+    assert(14 == pad_layout.buttons.size);
+
+    ESP_LOGI(TAG, "Fake DualShock controller layout passed");
+
+    pad_report = parse_gamepad_report(pad2_reports[0], 64, &pad_layout);
+
+    assert(0 == pad_report.buttons.up);
+    assert(0 == pad_report.buttons.down);
+    assert(0 == pad_report.buttons.right);
+    assert(0 == pad_report.buttons.left);
+    assert(0 == pad_report.buttons.a);
+    assert(0 == pad_report.buttons.b);
+    assert(0 == pad_report.buttons.x);
+    assert(0 == pad_report.buttons.y);
+    assert(128 == pad_report.lx);
+    assert(128 == pad_report.ly);
+    assert(128 == pad_report.rx);
+    assert(128 == pad_report.ry);
+
+    pad_report = parse_gamepad_report(pad2_reports[1], 64, &pad_layout);
+    assert(1 == pad_report.buttons.a);
+    assert(0 == pad_report.buttons.b);
+    assert(0 == pad_report.buttons.x);
+    assert(0 == pad_report.buttons.y);
+
+    pad_report = parse_gamepad_report(pad2_reports[2], 64, &pad_layout);
+    assert(0 == pad_report.lx);
+    assert(15 == pad_report.ly);
+    assert(225 == pad_report.rx);
+    assert(0 == pad_report.ry);
+    
+    ESP_LOGI(TAG, "Fake DualShock controller reports passed");
+
     return 0;
 }
 

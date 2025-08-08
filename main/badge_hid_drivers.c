@@ -114,8 +114,7 @@ esp_err_t analyze_mouse_layout(const uint8_t* desc, int desc_len, mouse_field_la
                 ;
 
             case HID_TYPE_LOCAL:
-                if (tag == HID_TAG_USAGE && usage_index < 32)
-                    usages[usage_index++] = data;
+                if (tag == HID_TAG_USAGE && usage_index < 32) usages[usage_index++] = data;
                 // else if (tag == HID_TAG_USAGE_MIN)
                 //     usage_min = data;
                 else if (tag == HID_TAG_USAGE_MAX)
@@ -245,8 +244,16 @@ esp_err_t analyze_gamepad_layout(const uint8_t* desc, const int desc_len, gamepa
                         layout_out->buttons.size    += report_count;
                         last_input_was_button_array = true;
                         bit_offset                  += report_size * report_count;
-                    } else if (usage_page == USAGE_PAGE_BUTTON && usage_index == 0 && last_input_was_button_array) {
-                        bit_offset += report_size * report_count;
+                    } else if (usage_page == USAGE_PAGE_BUTTON && usage_index == 0) {
+                        if (last_input_was_button_array) {
+                            bit_offset += report_size * report_count;
+                        } else if (!layout_out->buttons.present) {
+                            layout_out->buttons.offset  = bit_offset;
+                            layout_out->buttons.present = true;
+                            layout_out->buttons.size    += report_count;
+                            last_input_was_button_array = true;
+                            ESP_LOGD(TAG, "Implicit button array @ bit %d (%d buttons)", bit_offset, report_count);
+                        }
                     } else {
                         for (int u = 0; u < report_count; u++) {
                             uint16_t usage =

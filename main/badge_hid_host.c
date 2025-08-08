@@ -188,60 +188,56 @@ static void print_gamepad_report(const gamepad_report_t* rpt, int length) {
  */
 static void hid_host_generic_report_callback(const uint8_t* const data, const int length) {
     ESP_LOGI(TAG, "Received generic report (%d bytes)", length);
-    if (length >= 10) {
-        gamepad_report_t rpt = handle_gamepad_event(data, length);
+    gamepad_report_t rpt = handle_gamepad_event(data, length);
 
-        int lx = ((int)rpt.lx - 128);
-        int ly = ((int)rpt.ly - 128);
+    int lx = ((int)rpt.lx - 128);
+    int ly = ((int)rpt.ly - 128);
 
-        if (lx > 50) {
-            send_navigation_event(BSP_INPUT_NAVIGATION_KEY_RIGHT, 1, 0);
-        } else if (lx < -50) {
-            send_navigation_event(BSP_INPUT_NAVIGATION_KEY_LEFT, 1, 0);
-        }
-        if (ly > 50) {
-            send_navigation_event(BSP_INPUT_NAVIGATION_KEY_UP, 1, 0);
-        } else if (ly < -50) {
-            send_navigation_event(BSP_INPUT_NAVIGATION_KEY_DOWN, 1, 0);
-        }
-
-        if (rpt.buttons.up) {
-            send_navigation_event(BSP_INPUT_NAVIGATION_KEY_UP, 1, 0);
-        }
-        if (rpt.buttons.down) {
-            send_navigation_event(BSP_INPUT_NAVIGATION_KEY_DOWN, 1, 0);
-        }
-        if (rpt.buttons.left) {
-            send_navigation_event(BSP_INPUT_NAVIGATION_KEY_LEFT, 1, 0);
-        }
-        if (rpt.buttons.right) {
-            send_navigation_event(BSP_INPUT_NAVIGATION_KEY_RIGHT, 1, 0);
-        }
-
-        if (rpt.buttons.a) {
-            send_navigation_event(BSP_INPUT_NAVIGATION_KEY_GAMEPAD_A, 1, 0);
-        }
-        if (rpt.buttons.b) {
-            send_navigation_event(BSP_INPUT_NAVIGATION_KEY_GAMEPAD_B, 1, 0);
-        }
-        if (rpt.buttons.x) {
-            send_navigation_event(BSP_INPUT_NAVIGATION_KEY_GAMEPAD_X, 1, 0);
-        }
-        if (rpt.buttons.y) {
-            send_navigation_event(BSP_INPUT_NAVIGATION_KEY_GAMEPAD_Y, 1, 0);
-        }
-
-        if (rpt.buttons.start) {
-            send_navigation_event(BSP_INPUT_NAVIGATION_KEY_START, 1, 0);
-        }
-        if (rpt.buttons.select) {
-            send_navigation_event(BSP_INPUT_NAVIGATION_KEY_SELECT, 1, 0);
-        }
-
-        print_gamepad_report(&rpt, length);
-    } else {
-        ESP_LOGW(TAG, "Received too-short report (%d bytes)", length);
+    if (lx > 50) {
+        send_navigation_event(BSP_INPUT_NAVIGATION_KEY_RIGHT, 1, 0);
+    } else if (lx < -50) {
+        send_navigation_event(BSP_INPUT_NAVIGATION_KEY_LEFT, 1, 0);
     }
+    if (ly > 50) {
+        send_navigation_event(BSP_INPUT_NAVIGATION_KEY_UP, 1, 0);
+    } else if (ly < -50) {
+        send_navigation_event(BSP_INPUT_NAVIGATION_KEY_DOWN, 1, 0);
+    }
+
+    if (rpt.buttons.up) {
+        send_navigation_event(BSP_INPUT_NAVIGATION_KEY_UP, 1, 0);
+    }
+    if (rpt.buttons.down) {
+        send_navigation_event(BSP_INPUT_NAVIGATION_KEY_DOWN, 1, 0);
+    }
+    if (rpt.buttons.left) {
+        send_navigation_event(BSP_INPUT_NAVIGATION_KEY_LEFT, 1, 0);
+    }
+    if (rpt.buttons.right) {
+        send_navigation_event(BSP_INPUT_NAVIGATION_KEY_RIGHT, 1, 0);
+    }
+
+    if (rpt.buttons.a) {
+        send_navigation_event(BSP_INPUT_NAVIGATION_KEY_GAMEPAD_A, 1, 0);
+    }
+    if (rpt.buttons.b) {
+        send_navigation_event(BSP_INPUT_NAVIGATION_KEY_GAMEPAD_B, 1, 0);
+    }
+    if (rpt.buttons.x) {
+        send_navigation_event(BSP_INPUT_NAVIGATION_KEY_GAMEPAD_X, 1, 0);
+    }
+    if (rpt.buttons.y) {
+        send_navigation_event(BSP_INPUT_NAVIGATION_KEY_GAMEPAD_Y, 1, 0);
+    }
+
+    if (rpt.buttons.start) {
+        send_navigation_event(BSP_INPUT_NAVIGATION_KEY_START, 1, 0);
+    }
+    if (rpt.buttons.select) {
+        send_navigation_event(BSP_INPUT_NAVIGATION_KEY_SELECT, 1, 0);
+    }
+
+    print_gamepad_report(&rpt, length);
 }
 
 /**
