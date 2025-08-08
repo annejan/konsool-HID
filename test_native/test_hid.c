@@ -43,7 +43,7 @@ int test_layouts(void) {
 
     printf("Logitech layout M705 passed\n");
 
-    mouse_report = parse_mouse_event(mouse1_reports[0], 8, &mouse_layout);
+    mouse_report = parse_mouse_report(mouse1_reports[0], 8, &mouse_layout);
     assert(0 == mouse_report.buttons.button1);
     assert(0 == mouse_report.buttons.button2);
     assert(0 == mouse_report.buttons.button3);
@@ -51,7 +51,7 @@ int test_layouts(void) {
     assert(0 == mouse_report.y_displacement);
     assert(-2 == mouse_report.scroll);
     assert(0 == mouse_report.tilt);
-    mouse_report = parse_mouse_event(mouse1_reports[1], 8, &mouse_layout);
+    mouse_report = parse_mouse_report(mouse1_reports[1], 8, &mouse_layout);
     assert(0 == mouse_report.buttons.button1);
     assert(0 == mouse_report.buttons.button2);
     assert(0 == mouse_report.buttons.button3);
@@ -59,7 +59,7 @@ int test_layouts(void) {
     assert(4 == mouse_report.y_displacement);
     assert(0 == mouse_report.scroll);
     assert(1 == mouse_report.tilt);
-    mouse_report = parse_mouse_event(mouse1_reports[2], 8, &mouse_layout);
+    mouse_report = parse_mouse_report(mouse1_reports[2], 8, &mouse_layout);
     assert(0 == mouse_report.buttons.button1);
     assert(0 == mouse_report.buttons.button2);
     assert(0 == mouse_report.buttons.button3);
@@ -92,7 +92,7 @@ int test_layouts(void) {
 
     printf("Trust Kuza layout passed\n");
 
-    mouse_report = parse_mouse_event(mouse2_reports[0], 5, &mouse_layout);
+    mouse_report = parse_mouse_report(mouse2_reports[0], 5, &mouse_layout);
     assert(0 == mouse_report.buttons.button1);
     assert(0 == mouse_report.buttons.button2);
     assert(0 == mouse_report.buttons.button3);
@@ -100,7 +100,7 @@ int test_layouts(void) {
     assert(-5 == mouse_report.y_displacement);
     assert(-2 == mouse_report.scroll);
     assert(0 == mouse_report.tilt);
-    mouse_report = parse_mouse_event(mouse2_reports[1], 5, &mouse_layout);
+    mouse_report = parse_mouse_report(mouse2_reports[1], 5, &mouse_layout);
     assert(1 == mouse_report.buttons.button1);
     assert(0 == mouse_report.buttons.button2);
     assert(0 == mouse_report.buttons.button3);
@@ -108,7 +108,7 @@ int test_layouts(void) {
     assert(11 == mouse_report.y_displacement);
     assert(2 == mouse_report.scroll);
     assert(0 == mouse_report.tilt);
-    mouse_report = parse_mouse_event(mouse2_reports[2], 5, &mouse_layout);
+    mouse_report = parse_mouse_report(mouse2_reports[2], 5, &mouse_layout);
     assert(1 == mouse_report.buttons.button1);
     assert(1 == mouse_report.buttons.button2);
     assert(0 == mouse_report.buttons.button3);
@@ -141,7 +141,7 @@ int test_layouts(void) {
 
     printf("Fujitsu M520 layout passed\n");
 
-    mouse_report = parse_mouse_event(mouse3_reports[0], 4, &mouse_layout);
+    mouse_report = parse_mouse_report(mouse3_reports[0], 4, &mouse_layout);
     assert(1 == mouse_report.buttons.button1);
     assert(0 == mouse_report.buttons.button2);
     assert(1 == mouse_report.buttons.button3);
@@ -149,7 +149,7 @@ int test_layouts(void) {
     assert(-16 == mouse_report.y_displacement);
     assert(1 == mouse_report.scroll);
     assert(0 == mouse_report.tilt);
-    mouse_report = parse_mouse_event(mouse3_reports[1], 4, &mouse_layout);
+    mouse_report = parse_mouse_report(mouse3_reports[1], 4, &mouse_layout);
     assert(0 == mouse_report.buttons.button1);
     assert(0 == mouse_report.buttons.button2);
     assert(0 == mouse_report.buttons.button3);

@@ -92,9 +92,10 @@ esp_err_t analyze_mouse_layout(const uint8_t* desc, int desc_len, mouse_field_la
                     report_count = data;
                 else if (tag == HID_TAG_REPORT_ID) {
                     layout_out->report_id = data;
-                    bit_offset += 8; 
+                    bit_offset            += 8;
                 }
-                break;;
+                break;
+                ;
 
             case HID_TYPE_LOCAL:
                 if (tag == HID_TAG_USAGE && usage_index < 32)
@@ -308,11 +309,15 @@ esp_err_t analyze_gamepad_layout(const uint8_t* desc, const int desc_len, gamepa
     return ESP_OK;
 }
 
-mouse_report_t parse_mouse_event(const uint8_t* data, const int length, mouse_field_layout_t* layout) {
+mouse_report_t handle_mouse_event(const uint8_t* data, const int length) {
+    return parse_mouse_report(data, length, &mouse_layout);
+}
+
+mouse_report_t parse_mouse_report(const uint8_t* data, const int length, mouse_field_layout_t* layout) {
 
     // ESP_LOG_BUFFER_HEX(TAG, data, length);
 
-    mouse_report_t        report = {0};
+    mouse_report_t report = {0};
     if (!layout) {
         ESP_LOGW(TAG, "No layout for mouse!");
         return report;
@@ -341,11 +346,15 @@ mouse_report_t parse_mouse_event(const uint8_t* data, const int length, mouse_fi
     return report;
 }
 
+gamepad_report_t handle_gamepad_event(const uint8_t* data, const int length) {
+    return parse_gamepad_report(data, length, &gamepad_layout);
+}
+
 gamepad_report_t parse_gamepad_report(const uint8_t* data, int length, gamepad_field_layout_t* layout) {
 
     ESP_LOG_BUFFER_HEX(TAG, data, length);
 
-    gamepad_report_t        report = {0};
+    gamepad_report_t report = {0};
     if (!layout) {
         ESP_LOGW(TAG, "No layout for gamepad!");
         return report;
@@ -400,11 +409,15 @@ esp_err_t decode_descriptor_register_driver(const uint8_t* const desc, const int
         ESP_LOG_BUFFER_HEX(TAG, desc, desc_len);
         if (ESP_OK == analyze_mouse_layout(desc, desc_len, &mouse_layout)) {
             ESP_LOGI(TAG, "Parsed mouse layout:");
-            ESP_LOGI(TAG, "  Buttons: offset %u bits, count %u", mouse_layout.buttons.offset, mouse_layout.buttons.size);
-            if (mouse_layout.x.present) ESP_LOGI(TAG, "  X: offset %u bits, size %u bits", mouse_layout.x.offset, mouse_layout.x.size);
-            if (mouse_layout.y.offset) ESP_LOGI(TAG, "  Y: offset %u bits, size %u bits", mouse_layout.y.offset, mouse_layout.y.size);
+            ESP_LOGI(TAG, "  Buttons: offset %u bits, count %u", mouse_layout.buttons.offset,
+                     mouse_layout.buttons.size);
+            if (mouse_layout.x.present)
+                ESP_LOGI(TAG, "  X: offset %u bits, size %u bits", mouse_layout.x.offset, mouse_layout.x.size);
+            if (mouse_layout.y.offset)
+                ESP_LOGI(TAG, "  Y: offset %u bits, size %u bits", mouse_layout.y.offset, mouse_layout.y.size);
             if (mouse_layout.scroll.present)
-                ESP_LOGI(TAG, "  Scroll: offset %u bits, size %u bits", mouse_layout.scroll.offset, mouse_layout.scroll.size);
+                ESP_LOGI(TAG, "  Scroll: offset %u bits, size %u bits", mouse_layout.scroll.offset,
+                         mouse_layout.scroll.size);
             if (mouse_layout.tilt.present)
                 ESP_LOGI(TAG, "  Tilt: offset %u bits, size %u bits", mouse_layout.tilt.offset, mouse_layout.tilt.size);
         } else {

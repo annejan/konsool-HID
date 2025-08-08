@@ -180,7 +180,10 @@ typedef struct {
     int8_t  tilt;
 } mouse_report_t;
 
-mouse_report_t   parse_mouse_event(const uint8_t* const data, const int length, mouse_field_layout_t* layout);
+mouse_report_t   handle_mouse_event(const uint8_t* const data, const int length);
+gamepad_report_t handle_gamepad_event(const uint8_t* const data, const int length);
+
+mouse_report_t   parse_mouse_report(const uint8_t* const data, const int length, mouse_field_layout_t* layout);
 gamepad_report_t parse_gamepad_report(const uint8_t* const data, const int length, gamepad_field_layout_t* layout);
 
 esp_err_t analyze_mouse_layout(const uint8_t* desc, const int desc_len, mouse_field_layout_t* layout_out);
