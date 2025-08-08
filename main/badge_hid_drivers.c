@@ -16,6 +16,21 @@
 
 static char const TAG[] = "BADGE_HID_DRIVER";
 
+static mouse_field_layout_t   mouse_layout   = {0};
+static gamepad_field_layout_t gamepad_layout = {0};
+
+static uint32_t extract_unsigned_bits(const uint8_t* data, int bit_offset, int bit_size) {
+    uint32_t value = 0;
+    for (int i = 0; i < bit_size; i++) {
+        int byte_index = (bit_offset + i) / 8;
+        int bit_index  = (bit_offset + i) % 8;
+        if (data[byte_index] & (1 << bit_index)) {
+            value |= (1u << i);
+        }
+    }
+    return value;
+}
+
 static int32_t extract_signed_bits(const uint8_t* data, uint16_t bit_offset, uint8_t bit_size) {
     uint32_t raw = 0;
     for (int i = 0; i < ((bit_size + 7) / 8) + 1; ++i) {
@@ -31,6 +46,13 @@ static int32_t extract_signed_bits(const uint8_t* data, uint16_t bit_offset, uin
     }
 
     return value;
+}
+
+static void decode_hat_to_dpad(uint8_t hat, gamepad_report_t* rpt) {
+    rpt->buttons.up    = (hat == 0x00 || hat == 0x01 || hat == 0x07);
+    rpt->buttons.right = (hat == 0x01 || hat == 0x02 || hat == 0x03);
+    rpt->buttons.down  = (hat == 0x03 || hat == 0x04 || hat == 0x05);
+    rpt->buttons.left  = (hat == 0x05 || hat == 0x06 || hat == 0x07);
 }
 
 esp_err_t analyze_mouse_layout(const uint8_t* desc, int desc_len, mouse_field_layout_t* layout_out) {
@@ -68,7 +90,11 @@ esp_err_t analyze_mouse_layout(const uint8_t* desc, int desc_len, mouse_field_la
                     report_size = data;
                 else if (tag == HID_TAG_REPORT_COUNT)
                     report_count = data;
-                break;
+                else if (tag == HID_TAG_REPORT_ID) {
+                    layout_out->report_id = data;
+                    bit_offset += 8; 
+                }
+                break;;
 
             case HID_TYPE_LOCAL:
                 if (tag == HID_TAG_USAGE && usage_index < 32)
@@ -144,7 +170,7 @@ esp_err_t analyze_mouse_layout(const uint8_t* desc, int desc_len, mouse_field_la
     return layout_out->x.present && layout_out->y.present && layout_out->buttons.present ? ESP_OK : ESP_FAIL;
 }
 
-esp_err_t analyze_gamepad_layout(const uint8_t* desc, int desc_len, gamepad_field_layout_t* layout_out) {
+esp_err_t analyze_gamepad_layout(const uint8_t* desc, const int desc_len, gamepad_field_layout_t* layout_out) {
     memset(layout_out, 0, sizeof(*layout_out));
 
     uint16_t bit_offset  = 0;
@@ -282,6 +308,87 @@ esp_err_t analyze_gamepad_layout(const uint8_t* desc, int desc_len, gamepad_fiel
     return ESP_OK;
 }
 
+mouse_report_t parse_mouse_event(const uint8_t* data, const int length, mouse_field_layout_t* layout) {
+
+    // ESP_LOG_BUFFER_HEX(TAG, data, length);
+
+    mouse_report_t        report = {0};
+    if (!layout) {
+        ESP_LOGW(TAG, "No layout for mouse!");
+        return report;
+    }
+
+    if (layout->buttons.present) {
+        report.buttons.val = extract_unsigned_bits(data, layout->buttons.offset, layout->buttons.size);
+    }
+
+    if (layout->x.present) {
+        report.x_displacement = extract_signed_bits(data, layout->x.offset, layout->x.size);
+    }
+
+    if (layout->y.present) {
+        report.y_displacement = extract_signed_bits(data, layout->y.offset, layout->y.size);
+    }
+
+    if (layout->scroll.present) {
+        report.scroll = extract_signed_bits(data, layout->scroll.offset, layout->scroll.size);
+    }
+
+    if (layout->tilt.present) {
+        report.tilt = extract_signed_bits(data, layout->tilt.offset, layout->tilt.size);
+    }
+
+    return report;
+}
+
+gamepad_report_t parse_gamepad_report(const uint8_t* data, int length, gamepad_field_layout_t* layout) {
+
+    ESP_LOG_BUFFER_HEX(TAG, data, length);
+
+    gamepad_report_t        report = {0};
+    if (!layout) {
+        ESP_LOGW(TAG, "No layout for gamepad!");
+        return report;
+    }
+    if (layout->dpad.present) {
+        uint8_t hat = extract_unsigned_bits(data, layout->dpad.offset, layout->dpad.size);
+        decode_hat_to_dpad(hat, &report);
+    }
+
+    if (layout->buttons.present) {
+        uint32_t btn_bits  = extract_unsigned_bits(data, layout->buttons.offset, layout->buttons.size);
+        // Preserve bits that were already set by decode_hat_to_dpad()
+        btn_bits           |= report.buttons.val;
+        report.buttons.val = btn_bits;
+    }
+
+    if (layout->lx.present) {
+        report.lx = extract_signed_bits(data, layout->lx.offset, layout->lx.size);
+    }
+
+    if (layout->ly.present) {
+        report.ly = extract_signed_bits(data, layout->ly.offset, layout->ly.size);
+    }
+
+    if (layout->rx.present) {
+        report.rx = extract_signed_bits(data, layout->rx.offset, layout->rx.size);
+    }
+
+    if (layout->ry.present) {
+        report.ry = extract_signed_bits(data, layout->ry.offset, layout->ry.size);
+    }
+
+    if (layout->lt.present) {
+        report.lt = extract_signed_bits(data, layout->lt.offset, layout->lt.size);
+    }
+
+    if (layout->rt.present) {
+        report.rt = extract_signed_bits(data, layout->rt.offset, layout->rt.size);
+    }
+
+    return report;
+}
+
 esp_err_t decode_descriptor_register_driver(const uint8_t* const desc, const int desc_len, const uint8_t proto) {
     if (HID_PROTOCOL_KEYBOARD == proto) {
         ESP_LOGI(TAG, "Keyboard uses generic (boot) driver");
@@ -291,63 +398,69 @@ esp_err_t decode_descriptor_register_driver(const uint8_t* const desc, const int
     if (HID_PROTOCOL_MOUSE == proto) {
         ESP_LOGI(TAG, "Mouse driver analysing");
         ESP_LOG_BUFFER_HEX(TAG, desc, desc_len);
-        mouse_field_layout_t layout = {0};
-        if (ESP_OK == analyze_mouse_layout(desc, desc_len, &layout)) {
+        if (ESP_OK == analyze_mouse_layout(desc, desc_len, &mouse_layout)) {
             ESP_LOGI(TAG, "Parsed mouse layout:");
-            ESP_LOGI(TAG, "  Buttons: offset %u bits, count %u", layout.buttons.offset, layout.buttons.size);
-            if (layout.x.present) ESP_LOGI(TAG, "  X: offset %u bits, size %u bits", layout.x.offset, layout.x.size);
-            if (layout.y.offset) ESP_LOGI(TAG, "  Y: offset %u bits, size %u bits", layout.y.offset, layout.y.size);
-            if (layout.scroll.present)
-                ESP_LOGI(TAG, "  Scroll: offset %u bits, size %u bits", layout.scroll.offset, layout.scroll.size);
-            if (layout.tilt.present)
-                ESP_LOGI(TAG, "  Tilt: offset %u bits, size %u bits", layout.tilt.offset, layout.tilt.size);
+            ESP_LOGI(TAG, "  Buttons: offset %u bits, count %u", mouse_layout.buttons.offset, mouse_layout.buttons.size);
+            if (mouse_layout.x.present) ESP_LOGI(TAG, "  X: offset %u bits, size %u bits", mouse_layout.x.offset, mouse_layout.x.size);
+            if (mouse_layout.y.offset) ESP_LOGI(TAG, "  Y: offset %u bits, size %u bits", mouse_layout.y.offset, mouse_layout.y.size);
+            if (mouse_layout.scroll.present)
+                ESP_LOGI(TAG, "  Scroll: offset %u bits, size %u bits", mouse_layout.scroll.offset, mouse_layout.scroll.size);
+            if (mouse_layout.tilt.present)
+                ESP_LOGI(TAG, "  Tilt: offset %u bits, size %u bits", mouse_layout.tilt.offset, mouse_layout.tilt.size);
         } else {
             ESP_LOGW(TAG, "Could not parse mouse layout");
         }
     } else {
         ESP_LOGI(TAG, "Gamepad driver analysing");
         ESP_LOG_BUFFER_HEX(TAG, desc, desc_len);
-        gamepad_field_layout_t layout;
-        if (ESP_OK == analyze_gamepad_layout(desc, desc_len, &layout)) {
-            ESP_LOGI(TAG, "Parsed gamepad layout:");
-            if (layout.dpad.present) {
-                ESP_LOGI(TAG, "  D-Pad: offset %d bits, size %d bits", layout.dpad.offset, layout.dpad.size);
+        if (ESP_OK == analyze_gamepad_layout(desc, desc_len, &gamepad_layout)) {
+            ESP_LOGI(TAG, "Parsed gamepad gamepad_layout:");
+            if (gamepad_layout.dpad.present) {
+                ESP_LOGI(TAG, "  D-Pad: offset %d bits, size %d bits", gamepad_layout.dpad.offset,
+                         gamepad_layout.dpad.size);
             }
 
-            if (layout.buttons.present) {
-                ESP_LOGI(TAG, "  Buttons: offset %d bits, count %d", layout.buttons.offset, layout.buttons.size);
+            if (gamepad_layout.buttons.present) {
+                ESP_LOGI(TAG, "  Buttons: offset %d bits, count %d", gamepad_layout.buttons.offset,
+                         gamepad_layout.buttons.size);
             }
 
-            if (layout.lx.present && layout.ly.present) {
-                ESP_LOGI(TAG, "  Left Stick: X@%dbits (%d bits), Y@%dbits (%d bits)", layout.lx.offset, layout.lx.size,
-                         layout.ly.offset, layout.ly.size);
+            if (gamepad_layout.lx.present && gamepad_layout.ly.present) {
+                ESP_LOGI(TAG, "  Left Stick: X@%dbits (%d bits), Y@%dbits (%d bits)", gamepad_layout.lx.offset,
+                         gamepad_layout.lx.size, gamepad_layout.ly.offset, gamepad_layout.ly.size);
             } else {
-                if (layout.lx.present) {
-                    ESP_LOGI(TAG, "  Left Stick X: offset %d bits, size %d bits", layout.lx.offset, layout.lx.size);
+                if (gamepad_layout.lx.present) {
+                    ESP_LOGI(TAG, "  Left Stick X: offset %d bits, size %d bits", gamepad_layout.lx.offset,
+                             gamepad_layout.lx.size);
                 }
-                if (layout.ly.present) {
-                    ESP_LOGI(TAG, "  Left Stick Y: offset %d bits, size %d bits", layout.ly.offset, layout.ly.size);
+                if (gamepad_layout.ly.present) {
+                    ESP_LOGI(TAG, "  Left Stick Y: offset %d bits, size %d bits", gamepad_layout.ly.offset,
+                             gamepad_layout.ly.size);
                 }
             }
 
-            if (layout.rx.present && layout.ry.present) {
-                ESP_LOGI(TAG, "  Right Stick: X@%dbits (%d bits), Y@%dbits (%d bits)", layout.rx.offset, layout.rx.size,
-                         layout.ry.offset, layout.ry.size);
+            if (gamepad_layout.rx.present && gamepad_layout.ry.present) {
+                ESP_LOGI(TAG, "  Right Stick: X@%dbits (%d bits), Y@%dbits (%d bits)", gamepad_layout.rx.offset,
+                         gamepad_layout.rx.size, gamepad_layout.ry.offset, gamepad_layout.ry.size);
             } else {
-                if (layout.rx.present) {
-                    ESP_LOGI(TAG, "  Right Stick X: offset %d bits, size %d bits", layout.rx.offset, layout.rx.size);
+                if (gamepad_layout.rx.present) {
+                    ESP_LOGI(TAG, "  Right Stick X: offset %d bits, size %d bits", gamepad_layout.rx.offset,
+                             gamepad_layout.rx.size);
                 }
-                if (layout.ry.present) {
-                    ESP_LOGI(TAG, "  Right Stick Y: offset %d bits, size %d bits", layout.ry.offset, layout.ry.size);
+                if (gamepad_layout.ry.present) {
+                    ESP_LOGI(TAG, "  Right Stick Y: offset %d bits, size %d bits", gamepad_layout.ry.offset,
+                             gamepad_layout.ry.size);
                 }
             }
 
-            if (layout.lt.present) {
-                ESP_LOGI(TAG, "  Trigger L: offset %d bits, size %d bits", layout.lt.offset, layout.lt.size);
+            if (gamepad_layout.lt.present) {
+                ESP_LOGI(TAG, "  Trigger L: offset %d bits, size %d bits", gamepad_layout.lt.offset,
+                         gamepad_layout.lt.size);
             }
 
-            if (layout.rt.present) {
-                ESP_LOGI(TAG, "  Trigger R: offset %d bits, size %d bits", layout.rt.offset, layout.rt.size);
+            if (gamepad_layout.rt.present) {
+                ESP_LOGI(TAG, "  Trigger R: offset %d bits, size %d bits", gamepad_layout.rt.offset,
+                         gamepad_layout.rt.size);
             }
 
         } else {

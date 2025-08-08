@@ -120,42 +120,42 @@ inline int16_t sign_extend_12bit(uint16_t value) {
  * @param length Length of the report in bytes.
  * @return mouse_report_t Parsed report with movement and button states.
  */
-static mouse_report_t parse_mouse_event(const uint8_t* const data, const int length) {
-    mouse_report_t mouse_report = {0};
+// static mouse_report_t parse_mouse_event(const uint8_t* const data, const int length) {
+//     mouse_report_t mouse_report = {0};
 
-    if (length <= 4) {
-        hid_mouse_input_report_boot_t* boot_mouse_report = (hid_mouse_input_report_boot_t*)data;
-        mouse_report.x_displacement                      = boot_mouse_report->x_displacement;
-        mouse_report.y_displacement                      = boot_mouse_report->y_displacement;
-        mouse_report.buttons.val                         = boot_mouse_report->buttons.val;
-        if (length == 3) {
-            mouse_report.scroll = data[4];
-        }
-    } else if (length == 5) {
-        // Modern Logitech
-        mouse_report.buttons.val    = data[0];
-        mouse_report.x_displacement = (int8_t)data[1];
-        mouse_report.y_displacement = (int8_t)data[2];
-        mouse_report.scroll         = (int8_t)data[3];
-        mouse_report.tilt           = (int8_t)data[4];
-    } else if (length < 9) {
-        mouse_report.buttons.val    = data[1];
-        mouse_report.x_displacement = sign_extend_12bit((data[4] & 0x0F) << 8) | data[3];
-        mouse_report.y_displacement = sign_extend_12bit(data[5] << 4) | (data[4] >> 4);
-        mouse_report.scroll         = (int8_t)data[6];
-        if (length == 8) {
-            mouse_report.tilt = (int8_t)data[7];
-        }
-    } else {
-        mouse_report.buttons.val    = data[1];
-        mouse_report.x_displacement = (int16_t)((data[4] << 8) | data[3]);
-        mouse_report.y_displacement = (int16_t)((data[6] << 8) | data[5]);
-        mouse_report.scroll         = (int8_t)data[7];
-        mouse_report.tilt           = (int8_t)data[8];
-    }
+//     if (length <= 4) {
+//         hid_mouse_input_report_boot_t* boot_mouse_report = (hid_mouse_input_report_boot_t*)data;
+//         mouse_report.x_displacement                      = boot_mouse_report->x_displacement;
+//         mouse_report.y_displacement                      = boot_mouse_report->y_displacement;
+//         mouse_report.buttons.val                         = boot_mouse_report->buttons.val;
+//         if (length == 3) {
+//             mouse_report.scroll = data[4];
+//         }
+//     } else if (length == 5) {
+//         // Modern Logitech
+//         mouse_report.buttons.val    = data[0];
+//         mouse_report.x_displacement = (int8_t)data[1];
+//         mouse_report.y_displacement = (int8_t)data[2];
+//         mouse_report.scroll         = (int8_t)data[3];
+//         mouse_report.tilt           = (int8_t)data[4];
+//     } else if (length < 9) {
+//         mouse_report.buttons.val    = data[1];
+//         mouse_report.x_displacement = sign_extend_12bit((data[4] & 0x0F) << 8) | data[3];
+//         mouse_report.y_displacement = sign_extend_12bit(data[5] << 4) | (data[4] >> 4);
+//         mouse_report.scroll         = (int8_t)data[6];
+//         if (length == 8) {
+//             mouse_report.tilt = (int8_t)data[7];
+//         }
+//     } else {
+//         mouse_report.buttons.val    = data[1];
+//         mouse_report.x_displacement = (int16_t)((data[4] << 8) | data[3]);
+//         mouse_report.y_displacement = (int16_t)((data[6] << 8) | data[5]);
+//         mouse_report.scroll         = (int8_t)data[7];
+//         mouse_report.tilt           = (int8_t)data[8];
+//     }
 
-    return mouse_report;
-}
+//     return mouse_report;
+// }
 
 /**
  * @brief USB HID Host Mouse Interface report callback handler
@@ -223,56 +223,56 @@ static void hid_host_mouse_report_callback(const uint8_t* const data, const int 
  * @param length Report length in bytes.
  * @return gamepad_report_t
  */
-gamepad_report_t parse_gamepad_report(const uint8_t* data, int length) {
-    gamepad_report_t rpt = {0};
+// gamepad_report_t parse_gamepad_report(const uint8_t* data, int length) {
+//     gamepad_report_t rpt = {0};
 
-    if (length < 10) return rpt;
+//     if (length < 10) return rpt;
 
-    rpt.report_id = data[0];
+//     rpt.report_id = data[0];
 
-    uint8_t hat = data[1];
-    uint8_t b1  = data[2];
-    uint8_t b2  = data[3];
+//     uint8_t hat = data[1];
+//     uint8_t b1  = data[2];
+//     uint8_t b2  = data[3];
 
-    rpt.buttons.val = 0;
+//     rpt.buttons.val = 0;
 
-    rpt.buttons.up    = (hat == 0x00 || hat == 0x01 || hat == 0x07);
-    rpt.buttons.right = (hat == 0x01 || hat == 0x02 || hat == 0x03);
-    rpt.buttons.down  = (hat == 0x03 || hat == 0x04 || hat == 0x05);
-    rpt.buttons.left  = (hat == 0x05 || hat == 0x06 || hat == 0x07);
+//     rpt.buttons.up    = (hat == 0x00 || hat == 0x01 || hat == 0x07);
+//     rpt.buttons.right = (hat == 0x01 || hat == 0x02 || hat == 0x03);
+//     rpt.buttons.down  = (hat == 0x03 || hat == 0x04 || hat == 0x05);
+//     rpt.buttons.left  = (hat == 0x05 || hat == 0x06 || hat == 0x07);
 
-    // Face buttons
-    rpt.buttons.a = (b2 >> 6) & 1;
-    rpt.buttons.b = (b2 >> 5) & 1;
-    rpt.buttons.x = (b2 >> 4) & 1;
-    rpt.buttons.y = (b2 >> 3) & 1;
+//     // Face buttons
+//     rpt.buttons.a = (b2 >> 6) & 1;
+//     rpt.buttons.b = (b2 >> 5) & 1;
+//     rpt.buttons.x = (b2 >> 4) & 1;
+//     rpt.buttons.y = (b2 >> 3) & 1;
 
-    // Thumbsticks
-    rpt.buttons.l1 = (b2 >> 0) & 1;
-    rpt.buttons.r1 = (b1 >> 7) & 1;
+//     // Thumbsticks
+//     rpt.buttons.l1 = (b2 >> 0) & 1;
+//     rpt.buttons.r1 = (b1 >> 7) & 1;
 
-    // Shoulders and triggers
-    rpt.buttons.l2 = (b2 >> 2) & 1;
-    rpt.buttons.r2 = (b2 >> 1) & 1;
-    rpt.buttons.l3 = (b1 >> 2) & 1;
-    rpt.buttons.r3 = (b1 >> 3) & 1;
+//     // Shoulders and triggers
+//     rpt.buttons.l2 = (b2 >> 2) & 1;
+//     rpt.buttons.r2 = (b2 >> 1) & 1;
+//     rpt.buttons.l3 = (b1 >> 2) & 1;
+//     rpt.buttons.r3 = (b1 >> 3) & 1;
 
-    // Extra buttons
-    rpt.buttons.l4     = (b1 >> 1) & 1;
-    rpt.buttons.r4     = (b1 >> 0) & 1;
-    rpt.buttons.select = (b1 >> 6) & 1;
-    rpt.buttons.start  = (b1 >> 5) & 1;
-    rpt.buttons.home   = (b1 >> 4) & 1;
+//     // Extra buttons
+//     rpt.buttons.l4     = (b1 >> 1) & 1;
+//     rpt.buttons.r4     = (b1 >> 0) & 1;
+//     rpt.buttons.select = (b1 >> 6) & 1;
+//     rpt.buttons.start  = (b1 >> 5) & 1;
+//     rpt.buttons.home   = (b1 >> 4) & 1;
 
-    rpt.lx = data[4];
-    rpt.ly = data[5];
-    rpt.rx = data[6];
-    rpt.ry = data[7];
-    rpt.lt = data[8];
-    rpt.rt = data[9];
+//     rpt.lx = data[4];
+//     rpt.ly = data[5];
+//     rpt.rx = data[6];
+//     rpt.ry = data[7];
+//     rpt.lt = data[8];
+//     rpt.rt = data[9];
 
-    return rpt;
-}
+//     return rpt;
+// }
 
 static void print_gamepad_report(const gamepad_report_t* rpt, int length) {
     char line1[64], line2[64], button_line[128];
