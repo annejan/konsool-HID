@@ -16,6 +16,8 @@ int test_layouts(void) {
 
     assert(ESP_OK == analyze_mouse_layout(mouse1_desc, mouse1_len, &mouse_layout));
 
+    assert(64 == mouse_layout.report_len_bits);
+
     assert(mouse_layout.buttons.present);
     assert(mouse_layout.x.present);
     assert(mouse_layout.y.present);
@@ -92,6 +94,8 @@ int test_layouts(void) {
 
     assert(ESP_OK == analyze_mouse_layout(mouse2_desc, mouse2_len, &mouse_layout));
 
+    assert(40 == mouse_layout.report_len_bits);
+
     assert(mouse_layout.buttons.present);
     assert(mouse_layout.x.present);
     assert(mouse_layout.y.present);
@@ -141,6 +145,8 @@ int test_layouts(void) {
 
     assert(ESP_OK == analyze_mouse_layout(mouse3_desc, mouse3_len, &mouse_layout));
 
+    assert(32 == mouse_layout.report_len_bits);
+
     assert(mouse_layout.buttons.present);
     assert(mouse_layout.x.present);
     assert(mouse_layout.y.present);
@@ -189,6 +195,8 @@ int test_layouts(void) {
     ESP_LOGI(TAG, "Fujitsu M520 reports passed");
 
     assert(ESP_OK == analyze_gamepad_layout(gamepad1_desc, gamepad1_len, &pad_layout));
+
+    assert(80 == pad_layout.report_len_bits);
 
     assert(pad_layout.dpad.present);
     assert(pad_layout.buttons.present);

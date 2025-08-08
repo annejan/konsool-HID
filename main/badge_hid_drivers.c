@@ -55,6 +55,22 @@ static void decode_hat_to_dpad(uint8_t hat, gamepad_report_t* rpt) {
     rpt->buttons.left  = (hat == 0x05 || hat == 0x06 || hat == 0x07);
 }
 
+static void set_mouse_field(field_info_t* f, uint16_t offset, uint8_t size, mouse_field_layout_t* layout) {
+    f->present   = true;
+    f->offset    = offset;
+    f->size      = size;
+    uint16_t end = offset + size;
+    if (end > layout->report_len_bits) layout->report_len_bits = end;
+}
+
+static void set_gamepad_field(field_info_t* f, uint16_t offset, uint8_t size, gamepad_field_layout_t* layout) {
+    f->present   = true;
+    f->offset    = offset;
+    f->size      = size;
+    uint16_t end = offset + size;
+    if (end > layout->report_len_bits) layout->report_len_bits = end;
+}
+
 esp_err_t analyze_mouse_layout(const uint8_t* desc, int desc_len, mouse_field_layout_t* layout_out) {
     memset(layout_out, 0, sizeof(*layout_out));
 
@@ -64,7 +80,7 @@ esp_err_t analyze_mouse_layout(const uint8_t* desc, int desc_len, mouse_field_la
     int      usage_index  = 0;
     int      report_size  = 0;
     int      report_count = 0;
-    uint16_t usage_min    = 0;
+    // uint16_t usage_min    = 0;
     uint16_t usage_max    = 0;
 
     for (int i = 0; i < desc_len;) {
@@ -100,8 +116,8 @@ esp_err_t analyze_mouse_layout(const uint8_t* desc, int desc_len, mouse_field_la
             case HID_TYPE_LOCAL:
                 if (tag == HID_TAG_USAGE && usage_index < 32)
                     usages[usage_index++] = data;
-                else if (tag == HID_TAG_USAGE_MIN)
-                    usage_min = data;
+                // else if (tag == HID_TAG_USAGE_MIN)
+                //     usage_min = data;
                 else if (tag == HID_TAG_USAGE_MAX)
                     usage_max = data;
                 break;
@@ -119,29 +135,18 @@ esp_err_t analyze_mouse_layout(const uint8_t* desc, int desc_len, mouse_field_la
                             uint16_t usage = usages[u];
                             if (usage_page == USAGE_PAGE_GENERIC_DESKTOP) {
                                 if (usage == USAGE_X) {
-                                    layout_out->x.present = true;
-                                    layout_out->x.offset  = bit_offset;
-                                    layout_out->x.size    = bits;
+                                    set_mouse_field(&layout_out->x, bit_offset, bits, layout_out);
                                 } else if (usage == USAGE_Y) {
-                                    layout_out->y.present = true;
-                                    layout_out->y.offset  = bit_offset;
-                                    layout_out->y.size    = bits;
+                                    set_mouse_field(&layout_out->y, bit_offset, bits, layout_out);
                                 } else if (usage == USAGE_WHEEL) {
-                                    layout_out->scroll.present = true;
-                                    layout_out->scroll.offset  = bit_offset;
-                                    layout_out->scroll.size    = bits;
+                                    set_mouse_field(&layout_out->scroll, bit_offset, bits, layout_out);
                                 } else if (usage == USAGE_TILT) {
-                                    layout_out->tilt.present = true;
-                                    layout_out->tilt.offset  = bit_offset;
-                                    layout_out->tilt.size    = bits;
+                                    set_mouse_field(&layout_out->tilt, bit_offset, bits, layout_out);
                                 }
                             } else if (usage_page == USAGE_PAGE_CONSUMER && usage == USAGE_CONSUMER_TILT) {
-                                layout_out->tilt.present = true;
-                                layout_out->tilt.offset  = bit_offset;
-                                layout_out->tilt.size    = bits;
+                                set_mouse_field(&layout_out->tilt, bit_offset, bits, layout_out);
                             } else if (usage_page == USAGE_PAGE_BUTTON) {
                                 if (!layout_out->buttons.present) layout_out->buttons.offset = bit_offset;
-
                                 layout_out->buttons.present = true;
                             }
                             bit_offset += bits;
@@ -218,7 +223,7 @@ esp_err_t analyze_gamepad_layout(const uint8_t* desc, const int desc_len, gamepa
                         break;
                     case HID_TAG_REPORT_ID:
                         layout_out->report_id = data;
-                        bit_offset            = 8;
+                        bit_offset            += 8;
                         break;
                 }
                 break;
@@ -231,7 +236,7 @@ esp_err_t analyze_gamepad_layout(const uint8_t* desc, const int desc_len, gamepa
 
             case HID_TYPE_MAIN:
                 if (tag == HID_TAG_INPUT) {
-                    bool is_constant = (data & 0x01) != 0;
+                    // bool is_constant = (data & 0x01) != 0;
 
                     if (usage_page == USAGE_PAGE_BUTTON && usage_index >= 1 && usages[0] >= USAGE_BUTTON_MIN &&
                         usages[0] <= USAGE_BUTTON_MAX) {
@@ -254,41 +259,27 @@ esp_err_t analyze_gamepad_layout(const uint8_t* desc, const int desc_len, gamepa
                             if (usage_page == USAGE_PAGE_GENERIC_DESKTOP) {
                                 switch (usage) {
                                     case USAGE_HATSWITCH:
-                                        layout_out->dpad.present = true;
-                                        layout_out->dpad.offset  = bit_offset;
-                                        layout_out->dpad.size    = report_size;
+                                        set_gamepad_field(&layout_out->dpad, bit_offset, report_size, layout_out);
                                         break;
                                     case USAGE_X:
-                                        layout_out->lx.present = true;
-                                        layout_out->lx.offset  = bit_offset;
-                                        layout_out->lx.size    = report_size;
+                                        set_gamepad_field(&layout_out->lx, bit_offset, report_size, layout_out);
                                         break;
                                     case USAGE_Y:
-                                        layout_out->ly.present = true;
-                                        layout_out->ly.offset  = bit_offset;
-                                        layout_out->ly.size    = report_size;
+                                        set_gamepad_field(&layout_out->ly, bit_offset, report_size, layout_out);
                                         break;
                                     case USAGE_Z:
-                                        layout_out->rx.present = true;
-                                        layout_out->rx.offset  = bit_offset;
-                                        layout_out->rx.size    = report_size;
+                                        set_gamepad_field(&layout_out->rx, bit_offset, report_size, layout_out);
                                         break;
                                     case USAGE_RZ:
-                                        layout_out->ry.present = true;
-                                        layout_out->ry.offset  = bit_offset;
-                                        layout_out->ry.size    = report_size;
+                                        set_gamepad_field(&layout_out->ry, bit_offset, report_size, layout_out);
                                         break;
                                 }
                             } else if (usage_page == USAGE_PAGE_SIMULATION &&
                                        (usage == USAGE_ACCELERATOR || usage == USAGE_BRAKE)) {
                                 if (!layout_out->lt.present) {
-                                    layout_out->lt.present = true;
-                                    layout_out->lt.offset  = bit_offset;
-                                    layout_out->lt.size    = report_size;
+                                    set_gamepad_field(&layout_out->lt, bit_offset, report_size, layout_out);
                                 } else {
-                                    layout_out->rt.present = true;
-                                    layout_out->rt.offset  = bit_offset;
-                                    layout_out->rt.size    = report_size;
+                                    set_gamepad_field(&layout_out->rt, bit_offset, report_size, layout_out);
                                 }
                             }
 
@@ -320,6 +311,10 @@ mouse_report_t parse_mouse_report(const uint8_t* data, const int length, mouse_f
     mouse_report_t report = {0};
     if (!layout) {
         ESP_LOGW(TAG, "No layout for mouse!");
+        return report;
+    }
+    if (layout->report_len_bits > (length * 8)) {
+        ESP_LOGW(TAG, "Data too short for mouse event!");
         return report;
     }
 
@@ -359,6 +354,11 @@ gamepad_report_t parse_gamepad_report(const uint8_t* data, int length, gamepad_f
         ESP_LOGW(TAG, "No layout for gamepad!");
         return report;
     }
+    if (layout->report_len_bits > (length * 8)) {
+        ESP_LOGW(TAG, "Data too short for gamepad event!");
+        return report;
+    }
+
     if (layout->dpad.present) {
         uint8_t hat = extract_unsigned_bits(data, layout->dpad.offset, layout->dpad.size);
         decode_hat_to_dpad(hat, &report);

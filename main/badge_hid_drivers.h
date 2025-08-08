@@ -113,6 +113,7 @@ typedef struct {
     field_info_t lx, ly;
     field_info_t rx, ry;
     field_info_t lt, rt;
+    uint16_t     report_len_bits;
 } gamepad_field_layout_t;
 
 typedef struct {
@@ -122,6 +123,7 @@ typedef struct {
     field_info_t scroll;
     field_info_t tilt;
     field_info_t buttons;
+    uint16_t     report_len_bits;
 } mouse_field_layout_t;
 
 typedef struct {
