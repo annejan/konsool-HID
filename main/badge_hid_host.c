@@ -27,6 +27,23 @@ static QueueHandle_t bsp_event_queue = NULL;
 
 static const mouse_driver_t* active_mouse_driver = NULL;
 
+// What the devices last reported. Written from the USB host task and read by whatever draws the
+// screen, so the sequence number is bumped on either side of a write and readers retry on an odd
+// or changed one rather than take a lock.
+static volatile badge_hid_state_t hid_state = {0};
+
+void badge_hid_get_state(badge_hid_state_t* out) {
+    if (out == NULL) {
+        return;
+    }
+    uint32_t before, after;
+    do {
+        before = hid_state.sequence;
+        memcpy(out, (const void*)&hid_state, sizeof(*out));
+        after = hid_state.sequence;
+    } while (before != after || (before & 1u));
+}
+
 static void print_report_descriptor(const uint8_t* const desc, const int desc_len) {
     if (!desc || desc_len == 0) {
         ESP_LOGW(TAG, "No HID report descriptor");
@@ -111,17 +128,14 @@ static void hid_host_mouse_report_callback(const uint8_t* const data, const int 
 
     mouse_report_t mouse_report = handle_mouse_event(data, length);
 
-    static int x_pos    = 0;
-    static int y_pos    = 0;
-    static int x_scroll = 0;
-    static int y_scroll = 0;
-
-    // Calculate absolute position from displacement
-    x_pos += mouse_report.x_displacement;
-    y_pos += mouse_report.y_displacement;
-
-    x_scroll += mouse_report.tilt;
-    y_scroll += mouse_report.scroll;
+    hid_state.sequence++;
+    hid_state.mouse_seen    = true;
+    hid_state.mouse         = mouse_report;
+    hid_state.mouse_x      += mouse_report.x_displacement;
+    hid_state.mouse_y      += mouse_report.y_displacement;
+    hid_state.mouse_tilt   += mouse_report.tilt;
+    hid_state.mouse_scroll += mouse_report.scroll;
+    hid_state.sequence++;
 
     if (mouse_report.x_displacement > 100) {
         send_navigation_event(BSP_INPUT_NAVIGATION_KEY_RIGHT, 1, 0);
@@ -148,9 +162,9 @@ static void hid_host_mouse_report_callback(const uint8_t* const data, const int 
         send_navigation_event(BSP_INPUT_NAVIGATION_KEY_GAMEPAD_B, 1, 0);
     }
 
-    ESP_LOGD(TAG, "Mouse X: %06d\tY: %06d\t|%c|%c|%c| Scroll: %03d Tilt: %03d", x_pos, y_pos,
+    ESP_LOGD(TAG, "Mouse X: %06d\tY: %06d\t|%c|%c|%c| Scroll: %03d Tilt: %03d", hid_state.mouse_x, hid_state.mouse_y,
              (mouse_report.buttons.button1 ? 'o' : ' '), (mouse_report.buttons.button3 ? 'o' : ' '),
-             (mouse_report.buttons.button2 ? 'o' : ' '), x_scroll, y_scroll);
+             (mouse_report.buttons.button2 ? 'o' : ' '), hid_state.mouse_tilt, hid_state.mouse_scroll);
 }
 
 static void print_gamepad_report(const gamepad_report_t* rpt, int length) {
@@ -193,6 +207,11 @@ static void print_gamepad_report(const gamepad_report_t* rpt, int length) {
 static void hid_host_generic_report_callback(const uint8_t* const data, const int length) {
     ESP_LOGI(TAG, "Received generic report (%d bytes)", length);
     gamepad_report_t rpt = handle_gamepad_event(data, length);
+
+    hid_state.sequence++;
+    hid_state.gamepad_seen = true;
+    hid_state.gamepad      = rpt;
+    hid_state.sequence++;
 
     // The stick, the hat switch and a d-pad hiding in the buttons all arrive as the same four
     // directions, so which of them a pad has does not matter here
@@ -438,6 +457,9 @@ static void hid_host_interface_callback(hid_host_device_handle_t         hid_dev
         case HID_HOST_INTERFACE_EVENT_DISCONNECTED:
             ESP_LOGI(TAG, "HID Device, protocol '%s' DISCONNECTED", hid_proto_name_str[dev_params.proto]);
             ESP_ERROR_CHECK(hid_host_device_close(hid_device_handle));
+            hid_state.sequence++;
+            hid_state.device_connected = false;
+            hid_state.sequence++;
             break;
         case HID_HOST_INTERFACE_EVENT_TRANSFER_ERROR:
             ESP_LOGI(TAG, "HID Device, protocol '%s' TRANSFER_ERROR", hid_proto_name_str[dev_params.proto]);
@@ -498,16 +520,22 @@ static void hid_host_device_event(hid_host_device_handle_t hid_device_handle, co
             hid_host_dev_info_t info;
             ESP_ERROR_CHECK(hid_host_get_device_info(hid_device_handle, &info));
 
-            if (ESP_LOG_ENABLED(ESP_LOG_INFO)) {
+            char manufacturer[HID_STR_DESC_MAX_LENGTH];
+            char product[HID_STR_DESC_MAX_LENGTH];
+            utf16le_to_ascii(manufacturer, info.iManufacturer, HID_STR_DESC_MAX_LENGTH);
+            utf16le_to_ascii(product, info.iProduct, HID_STR_DESC_MAX_LENGTH);
 
-                char manufacturer[HID_STR_DESC_MAX_LENGTH];
-                char product[HID_STR_DESC_MAX_LENGTH];
-                utf16le_to_ascii(manufacturer, info.iManufacturer, HID_STR_DESC_MAX_LENGTH);
-                utf16le_to_ascii(product, info.iProduct, HID_STR_DESC_MAX_LENGTH);
+            ESP_LOGI(TAG, "VID:PID %04X:%04X\tManufacturer: %s\tProduct: %s", info.VID, info.PID, manufacturer,
+                     product);
 
-                ESP_LOGI(TAG, "VID:PID %04X:%04X\tManufacturer: %s\tProduct: %s", info.VID, info.PID, manufacturer,
-                         product);
-            }
+            hid_state.sequence++;
+            hid_state.device_connected = true;
+            hid_state.vid              = info.VID;
+            hid_state.pid              = info.PID;
+            strlcpy((char*)hid_state.protocol, hid_proto_name_str[dev_params.proto], sizeof(hid_state.protocol));
+            strlcpy((char*)hid_state.manufacturer, manufacturer, sizeof(hid_state.manufacturer));
+            strlcpy((char*)hid_state.product, product, sizeof(hid_state.product));
+            hid_state.sequence++;
 
             size_t         desc_len = 0;
             const uint8_t* desc     = hid_host_get_report_descriptor(hid_device_handle, &desc_len);
@@ -575,8 +603,10 @@ static void hid_client_task(void* arg) {
 
     ESP_LOGI(TAG, "HID Driver uninstall");
     ESP_ERROR_CHECK(hid_host_uninstall());
-    xQueueReset(hid_event_queue);
-    vQueueDelete(hid_event_queue);
+    QueueHandle_t queue = hid_event_queue;
+    hid_event_queue     = NULL;  // Nothing may post to it once it is gone
+    xQueueReset(queue);
+    vQueueDelete(queue);
 }
 
 /**
@@ -654,14 +684,26 @@ esp_err_t badge_hid_init(QueueHandle_t event_queue) {
 }
 
 esp_err_t badge_hid_deinit(void) {
-    usb_host_lib_info_t lib_info;
-    ESP_ERROR_CHECK(usb_host_lib_info(&lib_info));
-    if (lib_info.num_devices == 0) {
-        ESP_LOGW(TAG, "To shutdown driver, remove all USB devices and try again.");
+    if (hid_event_queue == NULL) {
+        return ESP_OK;  // Never started, or already on its way down
     }
-    // ESP_ERROR_CHECK(hid_host_unregister_callbacks());
-    ESP_ERROR_CHECK(hid_host_uninstall());
-    ESP_ERROR_CHECK(usb_host_uninstall());
-    hid_event_queue = NULL;
+
+    // Tearing the driver down is the client task's job: it is the one sitting on the queue, and
+    // uninstalling from another task deadlocks against it. Ask it to stop and it hands over to the
+    // USB library task, which frees the devices and uninstalls the host.
+    usb_host_lib_info_t lib_info;
+    esp_err_t           res = usb_host_lib_info(&lib_info);
+    if (res != ESP_OK) {
+        return res;
+    }
+    if (lib_info.num_devices != 0) {
+        ESP_LOGW(TAG, "Remove all USB devices before shutting the driver down");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    app_event_queue_t shutdown = {.event_group = APP_EVENT};
+    if (xQueueSend(hid_event_queue, &shutdown, pdMS_TO_TICKS(100)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
     return ESP_OK;
 }

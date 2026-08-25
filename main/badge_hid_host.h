@@ -66,6 +66,34 @@ typedef struct {
     mouse_report_t (*parse)(const uint8_t* data, int length);
 } mouse_driver_t;
 
+/// @brief The latest of what the connected devices reported
+///
+/// The events the BSP carries say which button was pressed, not where a stick is standing or how
+/// far a mouse has travelled, so a display that wants to show that reads it from here.
+typedef struct {
+    uint32_t sequence;  ///< Bumped on every report, so a reader can tell that something changed
+
+    bool     device_connected;
+    uint16_t vid;
+    uint16_t pid;
+    char     protocol[16];  ///< "keyboard", "mouse" or what the device calls itself otherwise
+    char     manufacturer[32];
+    char     product[32];
+
+    bool             gamepad_seen;
+    gamepad_report_t gamepad;
+
+    bool           mouse_seen;
+    mouse_report_t mouse;
+    int            mouse_x;  ///< Travelled since start, in whatever the mouse counts in
+    int            mouse_y;
+    int            mouse_scroll;
+    int            mouse_tilt;
+} badge_hid_state_t;
+
+/// @brief Copy out the latest state
+void badge_hid_get_state(badge_hid_state_t* out);
+
 esp_err_t badge_hid_init(QueueHandle_t event_queue);
 esp_err_t badge_hid_deinit(void);
 
