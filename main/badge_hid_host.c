@@ -10,6 +10,7 @@
 
 #include "badge_hid_host.h"
 #include <stdio.h>
+#include <string.h>
 #include "badge_hid_drivers.h"
 #include "bsp/input.h"
 #include "esp_log.h"
@@ -52,9 +53,12 @@ static void send_keyboard_event(char ascii, char const* utf8, uint32_t modifiers
     bsp_input_event_t event = {
         .type                    = INPUT_EVENT_TYPE_KEYBOARD,
         .args_keyboard.ascii     = ascii,
-        .args_keyboard.utf8      = utf8,
         .args_keyboard.modifiers = modifiers,
     };
+    if (utf8 != NULL) {
+        // The BSP carries the UTF-8 sequence in the event itself rather than pointing at ours
+        strlcpy(event.args_keyboard.utf8, utf8, sizeof(event.args_keyboard.utf8));
+    }
     if (bsp_event_queue) {
         xQueueSend(bsp_event_queue, &event, 0);
     } else {
@@ -190,20 +194,8 @@ static void hid_host_generic_report_callback(const uint8_t* const data, const in
     ESP_LOGI(TAG, "Received generic report (%d bytes)", length);
     gamepad_report_t rpt = handle_gamepad_event(data, length);
 
-    int lx = ((int)rpt.lx - 128);
-    int ly = ((int)rpt.ly - 128);
-
-    if (lx > 50) {
-        send_navigation_event(BSP_INPUT_NAVIGATION_KEY_RIGHT, 1, 0);
-    } else if (lx < -50) {
-        send_navigation_event(BSP_INPUT_NAVIGATION_KEY_LEFT, 1, 0);
-    }
-    if (ly > 50) {
-        send_navigation_event(BSP_INPUT_NAVIGATION_KEY_UP, 1, 0);
-    } else if (ly < -50) {
-        send_navigation_event(BSP_INPUT_NAVIGATION_KEY_DOWN, 1, 0);
-    }
-
+    // The stick, the hat switch and a d-pad hiding in the buttons all arrive as the same four
+    // directions, so which of them a pad has does not matter here
     if (rpt.buttons.up) {
         send_navigation_event(BSP_INPUT_NAVIGATION_KEY_UP, 1, 0);
     }
@@ -520,7 +512,23 @@ static void hid_host_device_event(hid_host_device_handle_t hid_device_handle, co
             size_t         desc_len = 0;
             const uint8_t* desc     = hid_host_get_report_descriptor(hid_device_handle, &desc_len);
 
-            ESP_ERROR_CHECK(decode_descriptor_register_driver(desc, desc_len, dev_params.proto));
+            ESP_ERROR_CHECK(decode_descriptor_register_driver(desc, desc_len, dev_params.proto, info.VID, info.PID));
+
+            // Some gamepads enumerate, hand out a report descriptor and then say nothing at all
+            // until they are asked to start reporting. The hid-host component knows which ones
+            // and what to send; sending it is up to us, since we hold the USB handle.
+            const hid_gamepad_quirk_t* quirk = badge_hid_gamepad_quirk();
+            if (quirk != NULL && quirk->enable_report != NULL) {
+                uint8_t enable[8]  = {0};
+                size_t  enable_len = quirk->enable_report_length;
+                if (enable_len > sizeof(enable)) {
+                    enable_len = sizeof(enable);
+                }
+                memcpy(enable, quirk->enable_report, enable_len);
+                ESP_LOGI(TAG, "%s needs a nudge before it reports, sending it", quirk->name);
+                ESP_ERROR_CHECK(hid_class_request_set_report(hid_device_handle, HID_REPORT_TYPE_FEATURE,
+                                                             quirk->enable_report_id, enable, enable_len));
+            }
 
             if (ESP_LOG_ENABLED(ESP_LOG_DEBUG)) {
                 print_report_descriptor(desc, desc_len);

@@ -16,10 +16,33 @@ Basic state and input data is displayed via the serial monitor.
 - Supports real-time input reporting (e.g. mouse movement, button presses)
 - Designed to support hot-plugging
 
+## How it works
+
+Reading the USB HID report descriptor is done by
+[badgeteam/hid-host](https://github.com/badgeteam/esp32-component-hid-host), which works out where
+the axes, the hat switch and the buttons sit in a report and knows the quirks of pads that need a
+nudge before they say anything. What is left in this project is `main/badge_hid_drivers.c`, which
+turns that into the named buttons and byte sized axes the rest of the firmware navigates by.
+
 ## Requirements
 
-- ESP-IDF v5.x
+- ESP-IDF v6.0.2, which `make prepare` fetches into the project directory
 - A Tanmatsu-compatible board with USB host support
+
+## Tests
+
+The mapping layer is plain C, so it builds and runs on a host against report descriptors captured
+from real hardware. The hid-host component is fetched on the first run:
+
+```
+make -C test_native && test_native/test
+```
+
+Point it at a checkout of your own to test against unreleased component changes:
+
+```
+make -C test_native HID_HOST=/path/to/esp32-component-hid-host
+```
 
 ## License
 
