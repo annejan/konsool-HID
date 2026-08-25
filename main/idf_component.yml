@@ -1,7 +1,7 @@
 dependencies:
   idf:
     version: '>=6.0.2'
-  badgeteam/badge-bsp: ^1.4.0
+  badgeteam/badge-bsp: '=1.1.0'
   robotman2412/pax-gfx: ^2.2.2
   usb_host_hid: ^1.2.1
   # Not on the component registry yet: publishing needs an IDF_COMPONENT_API_TOKEN secret on
@@ -9,4 +9,4 @@ dependencies:
   # Once it publishes, this becomes: badgeteam/hid-host: ^0.2.0
   hid-host:
     git: https://github.com/badgeteam/esp32-component-hid-host.git
-    version: v0.2.0
+    version: v0.3.0
