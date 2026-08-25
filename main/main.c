@@ -5,6 +5,7 @@
 #include "bsp/display.h"
 #include "bsp/input.h"
 #include "bsp/power.h"
+#include "driver/gpio.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "pax_fonts.h"
@@ -24,19 +25,9 @@ static pax_buf_t                  fb                   = {0};
 static QueueHandle_t              input_event_queue    = NULL;
 static char                       device_name[32]      = {0};
 
-#if defined(CONFIG_BSP_TARGET_KAMI)
-static pax_col_t palette[] = {0xffffffff, 0xff000000, 0xffff0000};  // white, black, red
-#endif
-
-#if defined(CONFIG_BSP_TARGET_KAMI)
-#define BLACK 0
-#define WHITE 1
-#define RED   2
-#else
 #define BLACK 0xFF000000
 #define WHITE 0xFFFFFFFF
 #define RED   0xFFFF0000
-#endif
 
 // A panel per kind of input event the BSP delivers, so a device that only speaks one of them still
 // shows what the others are missing.
@@ -55,7 +46,10 @@ static char              panel_text[PANEL_COUNT][PANEL_LINES][40];
 static int               panel_latest = -1;  // Panel that received the most recent event
 
 void blit(void) {
-    bsp_display_blit(0, 0, display_h_res, display_v_res, pax_buf_get_pixels(&fb));
+    esp_err_t res = bsp_display_blit(0, 0, display_h_res, display_v_res, pax_buf_get_pixels(&fb));
+    if (res != ESP_OK) {
+        ESP_LOGE(TAG, "blit failed: %s", esp_err_to_name(res));
+    }
 }
 
 static char const* navigation_key_name(bsp_input_navigation_key_t key) {
@@ -194,6 +188,9 @@ static void redraw(void) {
 }
 
 void app_main(void) {
+    // Start the GPIO interrupt service
+    gpio_install_isr_service(0);
+
     // Initialize the Non Volatile Storage service
     esp_err_t res = nvs_flash_init();
     if (res == ESP_ERR_NVS_NO_FREE_PAGES || res == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -202,9 +199,16 @@ void app_main(void) {
     }
     ESP_ERROR_CHECK(res);
 
-    // Initialize the Board Support Package. It installs the GPIO interrupt service itself, and
-    // leaves the display on its default settings when handed no configuration.
-    ESP_ERROR_CHECK(bsp_device_initialize(NULL));
+    // Ask for the colour format the panel actually runs at. Handed no configuration the BSP falls
+    // back to 16 bit, and the display stays dark.
+    bsp_configuration_t const bsp_configuration = {
+        .display =
+            {
+                .requested_color_format = BSP_DISPLAY_COLOR_FORMAT_24_888RGB,
+                .num_fbs                = 1,
+            },
+    };
+    ESP_ERROR_CHECK(bsp_device_initialize(&bsp_configuration));
 
     if (bsp_device_get_name(device_name, sizeof(device_name)) != ESP_OK) {
         device_name[0] = '\0';
@@ -214,6 +218,9 @@ void app_main(void) {
     res = bsp_display_get_parameters(&display_h_res, &display_v_res, &display_color_format, &display_data_endian);
     ESP_ERROR_CHECK(res);  // Check that the display parameters have been initialized
     bsp_display_rotation_t display_rotation = bsp_display_get_default_rotation();
+
+    // Nothing turns the backlight on for us, and whatever ran before us may well have turned it off
+    bsp_display_set_backlight_brightness(100);
 
     // Convert BSP color format into PAX buffer type
     pax_buf_type_t format = PAX_BUF_24_888RGB;
@@ -246,23 +253,19 @@ void app_main(void) {
             break;
     }
 
-        // Initialize graphics stack
-#if defined(CONFIG_BSP_TARGET_KAMI)
-    format = PAX_BUF_2_PAL;
-#endif
-
+    // Initialize graphics stack
     pax_buf_init(&fb, NULL, display_h_res, display_v_res, format);
     pax_buf_reversed(&fb, display_data_endian == BSP_DISPLAY_ENDIAN_BIG);
-
-#if defined(CONFIG_BSP_TARGET_KAMI)
-    fb.palette      = palette;
-    fb.palette_size = sizeof(palette) / sizeof(pax_col_t);
-#endif
 
     pax_buf_set_orientation(&fb, orientation);
 
     // Get input event queue from BSP
     ESP_ERROR_CHECK(bsp_input_get_queue(&input_event_queue));
+
+    // Put the panels on screen before bringing up USB, so the display says something even if no
+    // device ever turns up
+    panel_reset();
+    redraw();
 
     // Power to USB
     bsp_power_set_usb_host_boost_enabled(true);
@@ -270,9 +273,6 @@ void app_main(void) {
     ESP_ERROR_CHECK(badge_hid_init(input_event_queue));
 
     ESP_LOGI(TAG, "Waiting for USB HID input on %s", device_name[0] != '\0' ? device_name : "this device");
-
-    panel_reset();
-    redraw();
 
     while (1) {
         bsp_input_event_t event;
@@ -307,9 +307,11 @@ void app_main(void) {
                     bsp_device_restart_to_launcher();
                 }
                 if (event.args_navigation.key == BSP_INPUT_NAVIGATION_KEY_F2) {
+                    bsp_display_set_backlight_brightness(0);
                     bsp_input_set_backlight_brightness(0);
                 }
                 if (event.args_navigation.key == BSP_INPUT_NAVIGATION_KEY_F3) {
+                    bsp_display_set_backlight_brightness(100);
                     bsp_input_set_backlight_brightness(100);
                 }
 
