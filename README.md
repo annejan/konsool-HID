@@ -30,7 +30,7 @@ the USB port to host mode.
 ## How it works
 
 Reading the USB HID report descriptor is done by
-[badgeteam/hid-host](https://github.com/badgeteam/esp32-component-hid-host), which works out where
+[badgeteam/hid-host](https://components.espressif.com/components/badgeteam/hid-host), which works out where
 the axes, the hat switch and the buttons sit in a report and knows the quirks of pads that need a
 nudge before they say anything. What is left in this project is `main/badge_hid_drivers.c`, which
 turns that into the named buttons and byte sized axes the rest of the firmware navigates by.
