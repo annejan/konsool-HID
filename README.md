@@ -26,7 +26,7 @@ turns that into the named buttons and byte sized axes the rest of the firmware n
 
 ## Requirements
 
-- ESP-IDF v5.x
+- ESP-IDF v6.0.2, which `make prepare` fetches into the project directory
 - A Tanmatsu-compatible board with USB host support
 
 ## Tests

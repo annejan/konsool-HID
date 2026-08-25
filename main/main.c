@@ -6,7 +6,6 @@
 #include "bsp/power.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
-#include "hal/lcd_types.h"
 #include "nvs_flash.h"
 #include "pax_fonts.h"
 #include "pax_gfx.h"
@@ -17,12 +16,12 @@
 static char const TAG[] = "main";
 
 // Global variables
-static size_t                       display_h_res        = 0;
-static size_t                       display_v_res        = 0;
-static lcd_color_rgb_pixel_format_t display_color_format = LCD_COLOR_PIXEL_FORMAT_RGB565;
-static lcd_rgb_data_endian_t        display_data_endian  = LCD_RGB_DATA_ENDIAN_LITTLE;
-static pax_buf_t                    fb                   = {0};
-static QueueHandle_t                input_event_queue    = NULL;
+static size_t                     display_h_res        = 0;
+static size_t                     display_v_res        = 0;
+static bsp_display_color_format_t display_color_format = BSP_DISPLAY_COLOR_FORMAT_16_565RGB;
+static bsp_display_endianness_t   display_data_endian  = BSP_DISPLAY_ENDIAN_LITTLE;
+static pax_buf_t                  fb                   = {0};
+static QueueHandle_t              input_event_queue    = NULL;
 
 #if defined(CONFIG_BSP_TARGET_KAMI)
 static pax_col_t palette[] = {0xffffffff, 0xff000000, 0xffff0000};  // white, black, red
@@ -45,20 +44,20 @@ void app_main(void) {
     ESP_ERROR_CHECK(res);
 
     // Initialize the Board Support Package
-    ESP_ERROR_CHECK(bsp_device_initialize());
+    ESP_ERROR_CHECK(bsp_device_initialize(NULL));  // NULL leaves the display on its default settings
 
     // Get display parameters and rotation
     res = bsp_display_get_parameters(&display_h_res, &display_v_res, &display_color_format, &display_data_endian);
     ESP_ERROR_CHECK(res);  // Check that the display parameters have been initialized
     bsp_display_rotation_t display_rotation = bsp_display_get_default_rotation();
 
-    // Convert ESP-IDF color format into PAX buffer type
+    // Convert BSP color format into PAX buffer type
     pax_buf_type_t format = PAX_BUF_24_888RGB;
     switch (display_color_format) {
-        case LCD_COLOR_PIXEL_FORMAT_RGB565:
+        case BSP_DISPLAY_COLOR_FORMAT_16_565RGB:
             format = PAX_BUF_16_565RGB;
             break;
-        case LCD_COLOR_PIXEL_FORMAT_RGB888:
+        case BSP_DISPLAY_COLOR_FORMAT_24_888RGB:
             format = PAX_BUF_24_888RGB;
             break;
         default:
@@ -89,7 +88,7 @@ void app_main(void) {
 #endif
 
     pax_buf_init(&fb, NULL, display_h_res, display_v_res, format);
-    pax_buf_reversed(&fb, display_data_endian == LCD_RGB_DATA_ENDIAN_BIG);
+    pax_buf_reversed(&fb, display_data_endian == BSP_DISPLAY_ENDIAN_BIG);
 
 #if defined(CONFIG_BSP_TARGET_KAMI)
     fb.palette      = palette;

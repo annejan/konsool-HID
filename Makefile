@@ -3,7 +3,9 @@ PORT ?= /dev/ttyACM0
 IDF_PATH ?= $(shell cat .IDF_PATH 2>/dev/null || echo `pwd`/esp-idf)
 IDF_TOOLS_PATH ?= $(shell cat .IDF_TOOLS_PATH 2>/dev/null || echo `pwd`/esp-idf-tools)
 IDF_REPO ?= https://github.com/espressif/esp-idf.git
-IDF_COMMIT ?= 323e94257d185e33d26a7903fac4b26fcd73ad18
+# ESP-IDF v6.0.2. Older commits predate the esp_hal_usb component that the USB host stack on the
+# component registry now asks for.
+IDF_COMMIT ?= 7101770dc6db2667b3c477cc31365dd1acd6db4e
 IDF_EXPORT_QUIET ?= 1
 IDF_GITHUB_ASSETS ?= dl.espressif.com/github_assets
 MAKEFLAGS += --silent

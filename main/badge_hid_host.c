@@ -53,9 +53,12 @@ static void send_keyboard_event(char ascii, char const* utf8, uint32_t modifiers
     bsp_input_event_t event = {
         .type                    = INPUT_EVENT_TYPE_KEYBOARD,
         .args_keyboard.ascii     = ascii,
-        .args_keyboard.utf8      = utf8,
         .args_keyboard.modifiers = modifiers,
     };
+    if (utf8 != NULL) {
+        // The BSP carries the UTF-8 sequence in the event itself rather than pointing at ours
+        strlcpy(event.args_keyboard.utf8, utf8, sizeof(event.args_keyboard.utf8));
+    }
     if (bsp_event_queue) {
         xQueueSend(bsp_event_queue, &event, 0);
     } else {
