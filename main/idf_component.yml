@@ -4,4 +4,4 @@ dependencies:
   badgeteam/badge-bsp: '=1.1.0'
   robotman2412/pax-gfx: ^2.2.2
   usb_host_hid: ^1.2.1
-  badgeteam/hid-host: ^0.3.0
+  badgeteam/hid-host: ^0.3.1
