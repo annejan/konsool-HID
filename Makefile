@@ -155,7 +155,7 @@ badgelink:
 
 .PHONY: install
 install:
-	cd badgelink/tools; ./badgelink.sh appfs upload application "template application" 0 ../../build/tanmatsu/application.bin
+	cd badgelink/tools; ./badgelink.sh appfs upload application "USB HID host" 0 ../../build/tanmatsu/application.bin
 
 .PHONY: run
 run:
