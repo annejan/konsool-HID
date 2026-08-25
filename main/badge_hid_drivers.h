@@ -1,5 +1,9 @@
 /*
- * HID host library for gamepad and mouse input devices.
+ * Turns what badgeteam/hid-host decodes into the reports this project prints and navigates by.
+ *
+ * The report descriptor parsing itself lives in the hid-host component. What is left here is the
+ * part that is about this project: named buttons, byte sized axes and a report the rest of the
+ * firmware already knows how to read.
  *
  * SPDX-FileCopyrightText: 2024-2025 chegewara
  * SPDX-FileCopyrightText: 2025 Badge.Team
@@ -11,121 +15,14 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "esp_err.h"
+#include "hid_gamepad.h"
+#include "hid_layout.h"
 
-// HID Item Types
-#define HID_TYPE_MAIN   0x0
-#define HID_TYPE_GLOBAL 0x1
-#define HID_TYPE_LOCAL  0x2
-
-// HID Main Item Tags
-#define HID_TAG_INPUT          0x8
-#define HID_TAG_COLLECTION     0xA
-#define HID_TAG_END_COLLECTION 0xC
-
-// HID Global Item Tags
-#define HID_TAG_USAGE_PAGE   0x0
-#define HID_TAG_REPORT_SIZE  0x7
-#define HID_TAG_REPORT_COUNT 0x9
-#define HID_TAG_REPORT_ID    0x8
-
-// HID Local Item Tags
-#define HID_TAG_USAGE     0x0
-#define HID_TAG_USAGE_MIN 0x1
-#define HID_TAG_USAGE_MAX 0x2
-
-// HID Special Item
-#define HID_LONG_ITEM_PREFIX 0xFE
-
-// Usage Pages
-#define USAGE_PAGE_GENERIC_DESKTOP 0x01
-#define USAGE_PAGE_BUTTON          0x09
-#define USAGE_PAGE_CONSUMER        0x0C
-
-// Usages
-#define USAGE_X             0x30
-#define USAGE_Y             0x31
-#define USAGE_WHEEL         0x38
-#define USAGE_TILT          0x48
-#define USAGE_CONSUMER_TILT 0x0238
-
-// HID Item Types
-#define HID_TYPE_MAIN   0x0
-#define HID_TYPE_GLOBAL 0x1
-#define HID_TYPE_LOCAL  0x2
-
-// HID Main Item Tags
-#define HID_TAG_INPUT          0x8
-#define HID_TAG_COLLECTION     0xA
-#define HID_TAG_END_COLLECTION 0xC
-
-// HID Global Item Tags
-#define HID_TAG_USAGE_PAGE   0x0
-#define HID_TAG_REPORT_SIZE  0x7
-#define HID_TAG_REPORT_COUNT 0x9
-#define HID_TAG_REPORT_ID    0x8
-
-// HID Local Item Tags
-#define HID_TAG_USAGE     0x0
-#define HID_TAG_USAGE_MIN 0x1
-#define HID_TAG_USAGE_MAX 0x2
-
-// HID Special Item
-#define HID_LONG_ITEM_PREFIX 0xFE
-
-// Usage Pages
-#define USAGE_PAGE_GENERIC_DESKTOP 0x01
-#define USAGE_PAGE_SIMULATION      0x02
-#define USAGE_PAGE_BUTTON          0x09
-#define USAGE_PAGE_CONSUMER        0x0C
-
-// Generic Desktop Usages
-#define USAGE_X         0x30
-#define USAGE_Y         0x31
-#define USAGE_Z         0x32
-#define USAGE_RX        0x33
-#define USAGE_RY        0x34
-#define USAGE_RZ        0x35
-#define USAGE_HATSWITCH 0x39
-#define USAGE_WHEEL     0x38
-#define USAGE_TILT      0x48
-
-// Simulation Control Usages
-#define USAGE_ACCELERATOR 0xC4
-#define USAGE_BRAKE       0xC5
-
-// Consumer Control Usages
-#define USAGE_CONSUMER_TILT 0x0238
-
-// Button Usage Range
-#define USAGE_BUTTON_MIN 0x01
-#define USAGE_BUTTON_MAX 0x20
-
-typedef struct {
-    bool     present;
-    uint16_t offset;
-    uint8_t  size;
-} field_info_t;
-
-typedef struct {
-    uint8_t      report_id;
-    field_info_t dpad;
-    field_info_t buttons;
-    field_info_t lx, ly;
-    field_info_t rx, ry;
-    field_info_t lt, rt;
-    uint16_t     report_len_bits;
-} gamepad_field_layout_t;
-
-typedef struct {
-    uint8_t      report_id;
-    field_info_t x;
-    field_info_t y;
-    field_info_t scroll;
-    field_info_t tilt;
-    field_info_t buttons;
-    uint16_t     report_len_bits;
-} mouse_field_layout_t;
-
+/// @brief One gamepad report, with the buttons named the way this project uses them
+///
+/// Buttons come out of the device in the order it reports them, so button one lands in a, button
+/// two in b and so on. What they are labelled on the pad is anyone's guess; the names are what
+/// this firmware calls them. Buttons past the fifteenth do not fit and are dropped.
 typedef struct {
     uint8_t report_id;
 
@@ -161,11 +58,17 @@ typedef struct {
         uint32_t val;
     } buttons;
 
+    /// Sticks, scaled to a byte with 128 in the middle whatever range the device reports in.
+    /// An axis the device does not have reads as centered rather than as pushed hard one way.
     uint8_t lx, ly;
     uint8_t rx, ry;
+
+    /// Analog triggers. The Simulation page they live on is not parsed yet, so these read zero
+    /// on every device for now.
     uint8_t lt, rt;
 } gamepad_report_t;
 
+/// @brief One mouse report
 typedef struct {
     union {
         struct {
@@ -179,16 +82,28 @@ typedef struct {
     int16_t x_displacement;
     int16_t y_displacement;
     int8_t  scroll;
+    /// Horizontal wheel. Mice report it through Consumer AC Pan, which is not parsed yet, so
+    /// this reads zero for now.
     int8_t  tilt;
 } mouse_report_t;
 
+/// @brief Decode one report with the layout that was worked out when the device connected
 mouse_report_t   handle_mouse_event(const uint8_t* const data, const int length);
 gamepad_report_t handle_gamepad_event(const uint8_t* const data, const int length);
 
-mouse_report_t   parse_mouse_report(const uint8_t* const data, const int length, mouse_field_layout_t* layout);
-gamepad_report_t parse_gamepad_report(const uint8_t* const data, const int length, gamepad_field_layout_t* layout);
+/// @brief Decode one report with a layout of your own, which is what the tests do
+mouse_report_t   parse_mouse_report(const uint8_t* const data, const int length, const hid_layout_t* layout);
+gamepad_report_t parse_gamepad_report(const uint8_t* const data, const int length, const hid_gamepad_t* gamepad);
 
-esp_err_t analyze_mouse_layout(const uint8_t* desc, const int desc_len, mouse_field_layout_t* layout_out);
-esp_err_t analyze_gamepad_layout(const uint8_t* desc, const int desc_len, gamepad_field_layout_t* layout_out);
+/// @brief Work out how to read the reports of a device that just connected
+///
+/// The vendor and product ID are what the quirk table is keyed on, so a device that needs a nudge
+/// before it says anything can be recognised. Pass zero for both when they are not known.
+esp_err_t decode_descriptor_register_driver(const uint8_t* const desc, const int desc_len, const uint8_t proto,
+                                            const uint16_t vid, const uint16_t pid);
 
-esp_err_t decode_descriptor_register_driver(const uint8_t* const desc, const int desc_len, const uint8_t proto);
+/// @brief The quirks of the gamepad that is connected, NULL when it needs none or none is
+///
+/// The caller holds the USB handle, so sending the feature report that gets a device talking is
+/// its job rather than this one's.
+const hid_gamepad_quirk_t* badge_hid_gamepad_quirk(void);

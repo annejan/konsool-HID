@@ -15,13 +15,6 @@
 #include "esp_err.h"
 #include "usb/hid_host.h"
 
-#define MAX_FIELDS 32
-#define MAX_USAGES 32
-
-#define USAGE_PAGE_GENERIC_DESKTOP 0x01
-#define USAGE_PAGE_BUTTON          0x09
-#define USAGE_PAGE_CONSUMER        0x0C
-
 /**
  * @brief APP event group
  *

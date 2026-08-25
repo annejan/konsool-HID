@@ -4,3 +4,9 @@ dependencies:
   badgeteam/badge-bsp: ^0.3.0
   robotman2412/pax-gfx: ^2.0.1
   usb_host_hid: ^1.0.1
+  # Not on the component registry yet: publishing needs an IDF_COMPONENT_API_TOKEN secret on
+  # badgeteam/esp32-component-hid-host, which is missing, so the tag builds fail to upload.
+  # Once it publishes, this becomes: badgeteam/hid-host: ^0.2.0
+  hid-host:
+    git: https://github.com/badgeteam/esp32-component-hid-host.git
+    version: v0.2.0
