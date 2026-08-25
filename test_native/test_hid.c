@@ -172,12 +172,17 @@ static void test_stadia(void) {
     assert(0 == report.buttons.val);
     assert(126 == report.lx && 126 == report.ly);
 
-    // Hat up while the stick is pushed down and left: both are reported, the caller decides
+    // Hat up while the stick is pushed down and left: both are reported, the caller decides.
+    // The two buttons held are the first two bits of the report, which this pad calls Button 18
+    // and Button 17: its Assistant and Capture keys, not its A and B.
     report = parse_gamepad_report(pad1_reports[3], 11, &pad);
-    assert(1 == report.buttons.a);
-    assert(1 == report.buttons.b);
+    assert(0 == report.buttons.a);
+    assert(0 == report.buttons.b);
     assert(0 == report.buttons.x);
     assert(0 == report.buttons.y);
+    assert(1 == report.buttons.l4);
+    assert(1 == report.buttons.r4);
+    assert((1u << 16 | 1u << 17) == report.usage_buttons);
     assert(1 == report.buttons.up);
     assert(1 == report.buttons.down);
     assert(1 == report.buttons.left);
@@ -185,7 +190,8 @@ static void test_stadia(void) {
     assert(63 == report.lx && 192 == report.ly);
     assert(31 == report.rx && 224 == report.ry);
 
-    // Every one of its fifteen buttons held, hat centered
+    // Every one of its fifteen buttons held, hat centered. It names all fifteen and leaves no
+    // gaps, so every button this project knows about comes out set.
     report = parse_gamepad_report(pad1_reports[4], 11, &pad);
     assert(1 == report.buttons.a);
     assert(1 == report.buttons.b);
@@ -194,14 +200,19 @@ static void test_stadia(void) {
     assert(1 == report.buttons.select);
     assert(1 == report.buttons.start);
     assert(1 == report.buttons.l1);
-    assert(1 == report.buttons.l2);
-    assert(1 == report.buttons.l3);
-    assert(1 == report.buttons.l4);
     assert(1 == report.buttons.r1);
-    assert(1 == report.buttons.r2);
+    assert(1 == report.buttons.l3);
     assert(1 == report.buttons.r3);
+    assert(1 == report.buttons.l4);
     assert(1 == report.buttons.r4);
     assert(1 == report.buttons.home);
+    assert(1 == report.buttons.l2);
+    assert(1 == report.buttons.r2);
+    assert(0x7fff == report.buttons.val);
+
+    // Both analog triggers are held down all the way in that report
+    assert(255 == report.lt);
+    assert(255 == report.rt);
     assert(0 == report.buttons.up);
     assert(0 == report.buttons.down);
     assert(0 == report.buttons.left);
@@ -268,7 +279,9 @@ static void test_registered_driver(void) {
     assert(NULL == badge_hid_gamepad_quirk());
 
     gamepad_report_t pad = handle_gamepad_event(pad1_reports[3], 11);
-    assert(1 == pad.buttons.a);
+    assert(1 == pad.buttons.l4);  // Button 17, which is the first bit but not the first button
+    assert(1 == pad.buttons.r4);  // Button 18
+    assert(0 == pad.buttons.a);
     assert(63 == pad.lx);
 
     ESP_LOGI(TAG, "Registered drivers passed");

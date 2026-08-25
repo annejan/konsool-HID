@@ -16,6 +16,34 @@ static char const TAG[] = "BADGE_HID_DRIVER";
 /// Buttons that fit in the named part of gamepad_report_t, before up/down/left/right
 #define GAMEPAD_NAMED_BUTTONS 15
 
+/// @brief Which button the descriptor's numbering means
+///
+/// HID numbers the buttons of a gamepad but never says what they are called, so this is read off
+/// real hardware rather than out of a specification. It follows a Stadia controller, which names
+/// all twenty of the numbers it uses and leaves no gaps. A pad that disagrees will land its
+/// buttons in the wrong names; that is device knowledge, and the honest place for it is a quirk
+/// keyed on vendor and product ID.
+static const struct {
+    uint8_t  usage;
+    uint32_t bit;
+} gamepad_button_names[] = {
+    {1, 1u << 0},    // a
+    {2, 1u << 1},    // b
+    {4, 1u << 2},    // x
+    {5, 1u << 3},    // y
+    {11, 1u << 4},   // select
+    {12, 1u << 5},   // start
+    {14, 1u << 6},   // l1
+    {15, 1u << 7},   // r1
+    {7, 1u << 8},    // l2
+    {8, 1u << 9},    // r2
+    {20, 1u << 10},  // l3
+    {19, 1u << 11},  // r3
+    {13, 1u << 12},  // home
+    {17, 1u << 13},  // l4
+    {18, 1u << 14},  // r4
+};
+
 /// Mouse buttons that fit in mouse_report_t
 #define MOUSE_BUTTONS 8
 
@@ -97,14 +125,28 @@ gamepad_report_t parse_gamepad_report(const uint8_t* const data, const int lengt
 
     report.report_id = pad->layout.report_id;
 
-    // Buttons keep the order the device reports them in. Anything past the fifteenth would land
-    // on the direction bits, so it is dropped rather than mistaken for a d-pad press.
-    report.buttons.val = state.buttons & ((1u << GAMEPAD_NAMED_BUTTONS) - 1);
+    // Buttons are named by the usage the descriptor gave them rather than by where they sit in the
+    // report. A pad is free to list them in any order, and a Stadia controller lists them
+    // backwards, so reading by position calls its Capture button "button one".
+    report.buttons.val = 0;
+    for (size_t i = 0; i < sizeof(gamepad_button_names) / sizeof(gamepad_button_names[0]); i++) {
+        uint8_t usage = gamepad_button_names[i].usage;
+        if (state.usage_buttons & ((uint32_t)1 << (usage - 1))) {
+            report.buttons.val |= gamepad_button_names[i].bit;
+        }
+    }
+
+    report.usage_buttons = state.usage_buttons;
 
     report.buttons.up    = state.up;
     report.buttons.down  = state.down;
     report.buttons.left  = state.left;
     report.buttons.right = state.right;
+
+    report.dpad_up    = state.dpad_up;
+    report.dpad_down  = state.dpad_down;
+    report.dpad_left  = state.dpad_left;
+    report.dpad_right = state.dpad_right;
 
     const uint8_t* body = data;
     int            left = length;
@@ -121,9 +163,9 @@ gamepad_report_t parse_gamepad_report(const uint8_t* const data, const int lengt
     report.rx = axis_to_byte(body, left, rx);
     report.ry = axis_to_byte(body, left, ry);
 
-    // Analog triggers sit on the Simulation page, which hid_layout does not parse yet
-    report.lt = 0;
-    report.rt = 0;
+    // Analog triggers, which a pad that names them reports as simulation controls
+    report.lt = axis_to_byte(body, left, &pad->layout.brake);
+    report.rt = axis_to_byte(body, left, &pad->layout.accelerator);
 
     return report;
 }

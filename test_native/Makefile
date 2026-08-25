@@ -3,7 +3,7 @@ CFLAGS = -Wall -Wextra -g -I. -I../main -I$(HID_HOST)/include
 
 # Reading the report descriptor is the hid-host component's job now. Point HID_HOST at a checkout
 # of your own to test this project against unreleased changes to it.
-HID_HOST_VERSION ?= v0.2.0
+HID_HOST_VERSION ?= v0.3.0
 HID_HOST ?= .deps/hid-host
 HID_HOST_URL ?= https://github.com/badgeteam/esp32-component-hid-host
 

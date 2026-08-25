@@ -7,10 +7,18 @@ It can detect and handle the following USB HID device types:
 - ⌨️ Keyboard
 - 🎮 Game Controller
 
-The screen keeps a panel per kind of input event the BSP delivers - keyboard, navigation, action and
-scancode - and marks the one the latest event came from, so you can see at a glance what a device
-does and does not report. The same events go to the serial monitor. Note that the console goes
-quiet once the app switches the USB port to host mode.
+The screen draws what the device reports. A strip along the top says what is plugged in, with the
+manufacturer, the product name and the vendor and product ID. Below it a gamepad is drawn as a
+gamepad - d-pad, face buttons, shoulders, triggers that fill, and two sticks whose knobs stand
+where the sticks do - and a mouse as a mouse, with its buttons, its wheel and where it has walked
+to. Beside them is the last event of each kind the BSP delivers, so you can see what a device does
+and does not report.
+
+The gamepad panel also lists the numbers the pad gives its own buttons, which is how to work out
+what an unfamiliar one calls them.
+
+The same events go to the serial monitor. Note that the console goes quiet once the app switches
+the USB port to host mode.
 
 ## Features
 

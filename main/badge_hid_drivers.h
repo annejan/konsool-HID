@@ -58,6 +58,11 @@ typedef struct {
         uint32_t val;
     } buttons;
 
+    /// The directions with the sticks left out, so a drawing of the pad can light the d-pad only
+    /// when the d-pad is what moved. The bitfield above merges all three sources, which is what
+    /// navigating wants.
+    bool dpad_up, dpad_down, dpad_left, dpad_right;
+
     /// Sticks, scaled to a byte with 128 in the middle whatever range the device reports in.
     /// An axis the device does not have reads as centered rather than as pushed hard one way.
     uint8_t lx, ly;
@@ -66,6 +71,11 @@ typedef struct {
     /// Analog triggers. The Simulation page they live on is not parsed yet, so these read zero
     /// on every device for now.
     uint8_t lt, rt;
+
+    /// Every button that is down, numbered the way the descriptor numbers them: bit n is set when
+    /// the pad calls that one Button n+1. Handy for working out what an unfamiliar pad calls its
+    /// buttons, and for anything the names above have no room for.
+    uint32_t usage_buttons;
 } gamepad_report_t;
 
 /// @brief One mouse report

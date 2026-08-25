@@ -216,10 +216,10 @@ static void draw_gamepad(float x, float y, float w, float h, badge_hid_state_t c
     float const dpad_cy = top + h * 0.44f;
     float const arm     = 22;
     float const thick   = 20;
-    key_rect(dpad_cx - thick / 2, dpad_cy - arm - thick / 2, thick, arm, 4, g->buttons.up);
-    key_rect(dpad_cx - thick / 2, dpad_cy + thick / 2, thick, arm, 4, g->buttons.down);
-    key_rect(dpad_cx - arm - thick / 2, dpad_cy - thick / 2, arm, thick, 4, g->buttons.left);
-    key_rect(dpad_cx + thick / 2, dpad_cy - thick / 2, arm, thick, 4, g->buttons.right);
+    key_rect(dpad_cx - thick / 2, dpad_cy - arm - thick / 2, thick, arm, 4, g->dpad_up);
+    key_rect(dpad_cx - thick / 2, dpad_cy + thick / 2, thick, arm, 4, g->dpad_down);
+    key_rect(dpad_cx - arm - thick / 2, dpad_cy - thick / 2, arm, thick, 4, g->dpad_left);
+    key_rect(dpad_cx + thick / 2, dpad_cy - thick / 2, arm, thick, 4, g->dpad_right);
     pax_draw_round_rect(&fb, COL_LINE, dpad_cx - thick / 2, dpad_cy - thick / 2, thick, thick, 3);
 
     // Face buttons, in the diamond everybody expects
@@ -245,10 +245,22 @@ static void draw_gamepad(float x, float y, float w, float h, badge_hid_state_t c
     draw_stick(x + w * 0.33f, stick_cy, 30, g->lx, g->ly, g->buttons.l3, "L");
     draw_stick(x + w * 0.67f, stick_cy, 30, g->rx, g->ry, g->buttons.r3, "R");
 
-    // Whatever else the pad reports, so nothing is invisible
-    char extra[48];
-    snprintf(extra, sizeof(extra), "L4 %s   R4 %s   report 0x%02X", g->buttons.l4 ? "down" : "up",
-             g->buttons.r4 ? "down" : "up", g->report_id);
+    // The numbers the pad gives its own buttons, so an unfamiliar one can be worked out by
+    // pressing them one at a time
+    char  extra[64];
+    char* p    = extra;
+    char* end  = extra + sizeof(extra);
+    p         += snprintf(p, end - p, "down:");
+    bool any   = false;
+    for (int u = 1; u <= 32 && p < end; u++) {
+        if (g->usage_buttons & ((uint32_t)1 << (u - 1))) {
+            p   += snprintf(p, end - p, " %d", u);
+            any  = true;
+        }
+    }
+    if (!any) {
+        snprintf(p, end - p, " none");
+    }
     pax_draw_text(&fb, COL_SOFT, pax_font_sky_mono, 12, x + 14, y + h - 18, extra);
 }
 
@@ -292,19 +304,17 @@ static void draw_mouse(float x, float y, float w, float h, badge_hid_state_t con
     pax_draw_line(&fb, COL_LINE, pad_x + 6, pad_cy, pad_x + pad_w - 6, pad_cy);
     pax_draw_line(&fb, COL_LINE, pad_cx, pad_y + 6, pad_cx, pad_y + pad_h - 6);
 
-    // Clamp the arrow to the pad, a fast swipe should not draw off the card
-    float       dx    = (float)m->x_displacement;
-    float       dy    = (float)m->y_displacement;
-    float const reach = pad_w / 2 - 8;
-    float const len   = (dx * dx + dy * dy > 0) ? sqrtf(dx * dx + dy * dy) : 0;
-    if (len > reach) {
-        dx = dx / len * reach;
-        dy = dy / len * reach;
-    }
-    if (len > 0) {
-        pax_draw_thick_line(&fb, COL_ACCENT, pad_cx, pad_cy, pad_cx + dx, pad_cy + dy, 3);
-    }
-    pax_draw_circle(&fb, COL_INK, pad_cx, pad_cy, 3);
+    // Where the mouse has walked to, so the axes can be checked by moving it about. Counts are
+    // scaled down to keep a desk sized sweep on the card, and clamped so it cannot walk off.
+    float const reach_x = pad_w / 2 - 8;
+    float const reach_y = pad_h / 2 - 8;
+    float       px      = (float)state->mouse_x / 6.0f;
+    float       py      = (float)state->mouse_y / 6.0f;
+    px                  = px > reach_x ? reach_x : (px < -reach_x ? -reach_x : px);
+    py                  = py > reach_y ? reach_y : (py < -reach_y ? -reach_y : py);
+
+    pax_draw_circle(&fb, COL_LINE, pad_cx, pad_cy, 3);
+    pax_draw_circle(&fb, COL_ACCENT, pad_cx + px, pad_cy + py, 5);
 
     char text[48];
     snprintf(text, sizeof(text), "travelled %d, %d", state->mouse_x, state->mouse_y);
@@ -354,19 +364,37 @@ static void draw_device_strip(float x, float y, float w, float h, badge_hid_stat
     }
 }
 
-static void redraw(void) {
-    badge_hid_state_t state;
-    badge_hid_get_state(&state);
+typedef struct {
+    float x, y, w, h;
+} rect_t;
 
+static rect_t rect_strip, rect_pad, rect_mouse, rect_events;
+
+/// Everything the panel shows that never changes: the paper, the header and the hints
+static void draw_chrome(void) {
     float const width    = pax_buf_get_width(&fb);
     float const height   = pax_buf_get_height(&fb);
     float const margin   = 10;
     float const header_h = 44;
     float const footer_h = 22;
+    float const strip_h  = 34;
+
+    rect_strip = (rect_t){margin, header_h + margin, width - margin * 2, strip_h};
+
+    // The gamepad gets the room, the mouse and the event log share the rest
+    float const body_y  = rect_strip.y + strip_h + margin;
+    float const body_h  = height - body_y - footer_h - margin;
+    float const left_w  = (width - margin * 3) * 0.58f;
+    float const right_x = margin + left_w + margin;
+    float const right_w = width - right_x - margin;
+    float const mouse_h = body_h * 0.44f;
+
+    rect_pad    = (rect_t){margin, body_y, left_w, body_h};
+    rect_mouse  = (rect_t){right_x, body_y, right_w, mouse_h};
+    rect_events = (rect_t){right_x, body_y + mouse_h + margin, right_w, body_h - mouse_h - margin};
 
     pax_background(&fb, COL_BG);
 
-    // Header
     pax_draw_rect(&fb, COL_INK, 0, 0, width, header_h);
     pax_draw_text(&fb, COL_CARD, pax_font_saira_regular, 24, margin + 4, 9, "USB HID host");
     if (device_name[0] != '\0') {
@@ -374,26 +402,68 @@ static void redraw(void) {
         pax_draw_text(&fb, COL_SOFT, pax_font_sky_mono, 13, width - margin - 4 - size.x, 17, device_name);
     }
 
-    // What is plugged in, across the full width
-    float const strip_h = 34;
-    draw_device_strip(margin, header_h + margin, width - margin * 2, strip_h, &state);
-
-    // The gamepad gets the room, the mouse and the event log share the rest
-    float const body_y  = header_h + margin + strip_h + margin;
-    float const body_h  = height - body_y - footer_h - margin;
-    float const left_w  = (width - margin * 3) * 0.58f;
-    float const right_x = margin + left_w + margin;
-    float const right_w = width - right_x - margin;
-    float const mouse_h = body_h * 0.44f;
-
-    draw_gamepad(margin, body_y, left_w, body_h, &state);
-    draw_mouse(right_x, body_y, right_w, mouse_h, &state);
-    draw_events(right_x, body_y + mouse_h + margin, right_w, body_h - mouse_h - margin);
-
     pax_draw_text(&fb, COL_SOFT, pax_font_sky_mono, 13, margin + 4, height - footer_h,
                   "F1 launcher   F2 backlight off   F3 backlight on");
+}
 
-    blit();
+static bool device_changed(badge_hid_state_t const* a, badge_hid_state_t const* b) {
+    return a->device_connected != b->device_connected || a->vid != b->vid || a->pid != b->pid;
+}
+
+static bool gamepad_changed(badge_hid_state_t const* a, badge_hid_state_t const* b) {
+    if (a->gamepad_seen != b->gamepad_seen) {
+        return true;
+    }
+    gamepad_report_t const* x = &a->gamepad;
+    gamepad_report_t const* y = &b->gamepad;
+    return x->buttons.val != y->buttons.val || x->usage_buttons != y->usage_buttons || x->lx != y->lx ||
+           x->ly != y->ly || x->rx != y->rx || x->ry != y->ry || x->lt != y->lt || x->rt != y->rt ||
+           x->dpad_up != y->dpad_up || x->dpad_down != y->dpad_down || x->dpad_left != y->dpad_left ||
+           x->dpad_right != y->dpad_right;
+}
+
+static bool mouse_changed(badge_hid_state_t const* a, badge_hid_state_t const* b) {
+    return a->mouse_seen != b->mouse_seen || a->mouse.buttons.val != b->mouse.buttons.val || a->mouse_x != b->mouse_x ||
+           a->mouse_y != b->mouse_y || a->mouse_scroll != b->mouse_scroll || a->mouse_tilt != b->mouse_tilt;
+}
+
+static badge_hid_state_t drawn_state;
+static bool              events_dirty = true;
+
+/// Repaint what changed, and only that. Filling a card costs far more than sending the frame, so
+/// leaving the other three alone is the difference between a display that keeps up and one that
+/// does not.
+static void refresh(bool everything) {
+    badge_hid_state_t state;
+    badge_hid_get_state(&state);
+
+    bool painted = everything;
+    if (everything) {
+        draw_chrome();
+    }
+
+    if (everything || device_changed(&drawn_state, &state)) {
+        draw_device_strip(rect_strip.x, rect_strip.y, rect_strip.w, rect_strip.h, &state);
+        painted = true;
+    }
+    if (everything || gamepad_changed(&drawn_state, &state)) {
+        draw_gamepad(rect_pad.x, rect_pad.y, rect_pad.w, rect_pad.h, &state);
+        painted = true;
+    }
+    if (everything || mouse_changed(&drawn_state, &state)) {
+        draw_mouse(rect_mouse.x, rect_mouse.y, rect_mouse.w, rect_mouse.h, &state);
+        painted = true;
+    }
+    if (everything || events_dirty) {
+        draw_events(rect_events.x, rect_events.y, rect_events.w, rect_events.h);
+        events_dirty = false;
+        painted      = true;
+    }
+
+    drawn_state = state;
+    if (painted) {
+        blit();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -481,7 +551,7 @@ void app_main(void) {
     // Put something on screen before bringing up USB, so the display says what this is even if no
     // device ever turns up
     events_reset();
-    redraw();
+    refresh(true);
 
     // Power to USB
     bsp_power_set_usb_host_boost_enabled(true);
@@ -490,13 +560,8 @@ void app_main(void) {
 
     ESP_LOGI(TAG, "Waiting for USB HID input on %s", device_name[0] != '\0' ? device_name : "this device");
 
-    badge_hid_state_t state;
-    badge_hid_get_state(&state);
-    uint32_t drawn_sequence = state.sequence;
-
     while (1) {
         bsp_input_event_t event;
-        bool              dirty = false;
 
         // Sticks and mouse movement do not turn into BSP events, so the queue is polled rather
         // than waited on and the reports are picked up in between
@@ -564,17 +629,10 @@ void app_main(void) {
                 default:
                     continue;
             }
-            dirty = true;
+            events_dirty = true;
         }
 
-        badge_hid_get_state(&state);
-        if (state.sequence != drawn_sequence) {
-            drawn_sequence = state.sequence;
-            dirty          = true;
-        }
-
-        if (dirty) {
-            redraw();
-        }
+        // refresh works out what actually changed, so there is nothing to track here
+        refresh(false);
     }
 }
