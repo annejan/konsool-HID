@@ -196,6 +196,55 @@ static void print_gamepad_report(const gamepad_report_t* rpt, int length) {
     ESP_LOGD(TAG, "%s", line2);
 }
 
+// What the gamepad reported last, so a report can be turned into presses and releases. A report
+// says which buttons are down, not which ones changed: holding a button repeats the same report,
+// and letting go sends one with the bit clear and nothing else. Navigating a menu only ever needed
+// the press, but a game needs the release just as much, so the difference is what gets sent on.
+static uint32_t previous_buttons = 0;
+
+/// @brief Send a press for every button that went down and a release for every one that came up
+///
+/// The stick, the hat switch and a d-pad hiding in the buttons all arrive as the same four
+/// directions, so which of them a pad has does not matter here.
+static void emit_button_changes(uint32_t now) {
+    // Asking the struct where a button sits rather than writing the bit number down, so that
+    // reordering the bitfield cannot quietly remap the buttons.
+#define BTN_MASK(name) (((gamepad_report_t){.buttons = {.name = 1}}).buttons.val)
+    const struct {
+        uint32_t                   mask;
+        bsp_input_navigation_key_t key;
+    } nav_buttons[] = {
+        {BTN_MASK(up),     BSP_INPUT_NAVIGATION_KEY_UP        },
+        {BTN_MASK(down),   BSP_INPUT_NAVIGATION_KEY_DOWN      },
+        {BTN_MASK(left),   BSP_INPUT_NAVIGATION_KEY_LEFT      },
+        {BTN_MASK(right),  BSP_INPUT_NAVIGATION_KEY_RIGHT     },
+        {BTN_MASK(a),      BSP_INPUT_NAVIGATION_KEY_GAMEPAD_A },
+        {BTN_MASK(b),      BSP_INPUT_NAVIGATION_KEY_GAMEPAD_B },
+        {BTN_MASK(x),      BSP_INPUT_NAVIGATION_KEY_GAMEPAD_X },
+        {BTN_MASK(y),      BSP_INPUT_NAVIGATION_KEY_GAMEPAD_Y },
+        {BTN_MASK(start),  BSP_INPUT_NAVIGATION_KEY_START     },
+        {BTN_MASK(select), BSP_INPUT_NAVIGATION_KEY_SELECT    },
+    };
+#undef BTN_MASK
+
+    uint32_t changed = now ^ previous_buttons;
+    previous_buttons = now;
+
+    for (size_t i = 0; i < sizeof(nav_buttons) / sizeof(nav_buttons[0]); i++) {
+        if (changed & nav_buttons[i].mask) {
+            send_navigation_event(nav_buttons[i].key, (now & nav_buttons[i].mask) != 0, 0);
+        }
+    }
+}
+
+/// @brief Let go of everything that was still held
+///
+/// A pad unplugged mid press never sends the report that would have released the button, so the
+/// release is sent here instead. Without it a game keeps running right into a wall forever.
+static void release_held_buttons(void) {
+    emit_button_changes(0);
+}
+
 /**
  * @brief USB HID Host Generic Interface report callback handler
  *
@@ -213,40 +262,7 @@ static void hid_host_generic_report_callback(const uint8_t* const data, const in
     hid_state.gamepad      = rpt;
     hid_state.sequence++;
 
-    // The stick, the hat switch and a d-pad hiding in the buttons all arrive as the same four
-    // directions, so which of them a pad has does not matter here
-    if (rpt.buttons.up) {
-        send_navigation_event(BSP_INPUT_NAVIGATION_KEY_UP, 1, 0);
-    }
-    if (rpt.buttons.down) {
-        send_navigation_event(BSP_INPUT_NAVIGATION_KEY_DOWN, 1, 0);
-    }
-    if (rpt.buttons.left) {
-        send_navigation_event(BSP_INPUT_NAVIGATION_KEY_LEFT, 1, 0);
-    }
-    if (rpt.buttons.right) {
-        send_navigation_event(BSP_INPUT_NAVIGATION_KEY_RIGHT, 1, 0);
-    }
-
-    if (rpt.buttons.a) {
-        send_navigation_event(BSP_INPUT_NAVIGATION_KEY_GAMEPAD_A, 1, 0);
-    }
-    if (rpt.buttons.b) {
-        send_navigation_event(BSP_INPUT_NAVIGATION_KEY_GAMEPAD_B, 1, 0);
-    }
-    if (rpt.buttons.x) {
-        send_navigation_event(BSP_INPUT_NAVIGATION_KEY_GAMEPAD_X, 1, 0);
-    }
-    if (rpt.buttons.y) {
-        send_navigation_event(BSP_INPUT_NAVIGATION_KEY_GAMEPAD_Y, 1, 0);
-    }
-
-    if (rpt.buttons.start) {
-        send_navigation_event(BSP_INPUT_NAVIGATION_KEY_START, 1, 0);
-    }
-    if (rpt.buttons.select) {
-        send_navigation_event(BSP_INPUT_NAVIGATION_KEY_SELECT, 1, 0);
-    }
+    emit_button_changes(rpt.buttons.val);
 
     print_gamepad_report(&rpt, length);
 }
@@ -457,6 +473,7 @@ static void hid_host_interface_callback(hid_host_device_handle_t         hid_dev
         case HID_HOST_INTERFACE_EVENT_DISCONNECTED:
             ESP_LOGI(TAG, "HID Device, protocol '%s' DISCONNECTED", hid_proto_name_str[dev_params.proto]);
             ESP_ERROR_CHECK(hid_host_device_close(hid_device_handle));
+            release_held_buttons();
             hid_state.sequence++;
             hid_state.device_connected = false;
             hid_state.sequence++;
@@ -607,6 +624,10 @@ static void hid_client_task(void* arg) {
     hid_event_queue     = NULL;  // Nothing may post to it once it is gone
     xQueueReset(queue);
     vQueueDelete(queue);
+
+    // A FreeRTOS task may not return. Falling off the end here aborts the whole firmware with
+    // "Task hid_events should not return", which is a poor way to finish shutting down cleanly.
+    vTaskDelete(NULL);
 }
 
 /**
@@ -629,7 +650,17 @@ static void usb_lib_task(void* arg) {
         // In this example, there is only one client registered
         // So, once we deregister the client, this call must succeed with ESP_OK
         if (event_flags & USB_HOST_LIB_EVENT_FLAGS_NO_CLIENTS) {
-            ESP_ERROR_CHECK(usb_host_device_free_all());
+            // Freeing the devices is not necessarily done by the time this returns: a device that
+            // is still being closed leaves ESP_ERR_NOT_FINISHED behind and ALL_FREE follows once
+            // it is gone. Only a real error is worth aborting the firmware over.
+            esp_err_t res = usb_host_device_free_all();
+            if (res == ESP_ERR_NOT_FINISHED) {
+                continue;  // Wait for USB_HOST_LIB_EVENT_FLAGS_ALL_FREE
+            }
+            ESP_ERROR_CHECK(res);
+            break;
+        }
+        if (event_flags & USB_HOST_LIB_EVENT_FLAGS_ALL_FREE) {
             break;
         }
     }
